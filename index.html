@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Договоры менеджера</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace">
+        <aside class="sidebar" aria-label="Разделы приложения">
+          <div class="brand">
+            <span class="brand-mark">Д</span>
+            <div>
+              <strong>Договоры</strong>
+              <small>первичный блок</small>
+            </div>
+          </div>
+          <nav class="nav-list">
+            <button class="nav-item active" type="button">Договор подряда</button>
+            <button class="nav-item" type="button" disabled>Счета</button>
+            <button class="nav-item" type="button" disabled>Библиотека</button>
+          </nav>
+        </aside>
+
+        <form id="contractForm" class="content">
+          <header class="topbar">
+            <div>
+              <h1>Новый договор</h1>
+              <p>Заполнение договора и приложения для выгрузки в Word.</p>
+            </div>
+            <div class="top-actions">
+              <button class="button ghost" id="saveDraftButton" type="button">Сохранить черновик</button>
+              <button class="button primary" id="downloadContractButton" type="button">Выгрузить договор и приложение</button>
+            </div>
+          </header>
+
+          <section class="form-grid">
+            <div class="panel span-8">
+              <div class="panel-title">
+                <h2>Основные данные</h2>
+              </div>
+              <div class="grid two">
+                <label>
+                  <span>Номер договора</span>
+                  <input name="contractNumber" required placeholder="6820" />
+                </label>
+                <label>
+                  <span>Дата договора</span>
+                  <input name="contractDate" type="date" required />
+                </label>
+              </div>
+
+              <fieldset>
+                <legend>Исполнитель</legend>
+                <div class="segmented">
+                  <label>
+                    <input type="radio" name="seller" value="ip" checked />
+                    <span>ИП Купорова · НДС 5%</span>
+                  </label>
+                  <label>
+                    <input type="radio" name="seller" value="ooo" />
+                    <span>ООО Веркуп · НДС 22%</span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <div class="seller-details" id="sellerDetails" aria-live="polite"></div>
+
+              <fieldset>
+                <legend>Заказчик</legend>
+                <div class="segmented">
+                  <label>
+                    <input type="radio" name="customerType" value="legal" checked />
+                    <span>Юридическое лицо</span>
+                  </label>
+                  <label>
+                    <input type="radio" name="customerType" value="person" />
+                    <span>Физическое лицо</span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <div id="legalFields" class="customer-fields">
+                <div class="inline-row">
+                  <label class="grow">
+                    <span>ИНН заказчика</span>
+                    <input name="customerInn" inputmode="numeric" placeholder="Введите ИНН" />
+                  </label>
+                  <button class="button lookup" id="lookupInnButton" type="button">Найти по ИНН</button>
+                </div>
+                <div class="grid two">
+                  <label>
+                    <span>Наименование</span>
+                    <input name="customerName" placeholder="ООО Ромашка" />
+                  </label>
+                  <label>
+                    <span>КПП</span>
+                    <input name="customerKpp" placeholder="770001001" />
+                  </label>
+                  <label class="span-2">
+                    <span>Юридический адрес</span>
+                    <textarea name="customerAddress" rows="2"></textarea>
+                  </label>
+                  <label>
+                    <span>ОГРН</span>
+                    <input name="customerOgrn" />
+                  </label>
+                  <label>
+                    <span>Руководитель / представитель</span>
+                    <input name="customerDirector" />
+                  </label>
+                </div>
+              </div>
+
+              <div id="personFields" class="customer-fields hidden">
+                <div class="grid two">
+                  <label>
+                    <span>ФИО</span>
+                    <input name="personName" placeholder="Иванов Иван Иванович" />
+                  </label>
+                  <label>
+                    <span>Серия и номер паспорта</span>
+                    <input name="passport" placeholder="4512 123456" />
+                  </label>
+                  <label class="span-2">
+                    <span>Адрес регистрации</span>
+                    <textarea name="personAddress" rows="2"></textarea>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <aside class="panel span-4">
+              <div class="panel-title">
+                <h2>Настройки</h2>
+              </div>
+              <label>
+                <span>DaData API token</span>
+                <input name="dadataToken" type="password" placeholder="Для поиска по ИНН" />
+              </label>
+              <label>
+                <span>Порядок оплаты</span>
+                <select name="paymentTerms">
+                  <option value="100">Предоплата 100%</option>
+                  <option value="70">Предоплата 70%</option>
+                  <option value="50">Предоплата 50%</option>
+                  <option value="30">Предоплата 30%</option>
+                  <option value="0">Без предоплаты</option>
+                </select>
+              </label>
+              <label id="finalPaymentTimingLabel">
+                <span>Когда получаем доплату</span>
+                <select name="finalPaymentTiming">
+                  <option value="beforeShipment">До отгрузки конструкций</option>
+                  <option value="afterUpd">После подписания УПД</option>
+                </select>
+              </label>
+              <label>
+                <span>Гарантийный срок</span>
+                <select name="warranty">
+                  <option value="Без гарантии">Без гарантии</option>
+                  <option value="6 месяцев">6 месяцев</option>
+                  <option value="12 месяцев">12 месяцев</option>
+                  <option value="20 месяцев" selected>20 месяцев</option>
+                  <option value="2 года">2 года</option>
+                  <option value="3 года">3 года</option>
+                </select>
+              </label>
+              <label>
+                <span>Срок выполнения работ, рабочих дней</span>
+                <input name="workDays" type="number" min="1" step="1" placeholder="10" />
+              </label>
+              <label>
+                <span>Адрес монтажа / доставки / работ</span>
+                <textarea name="workAddress" rows="4"></textarea>
+              </label>
+            </aside>
+
+            <section class="panel span-12">
+              <div class="panel-title row-title">
+                <h2>Позиции договора</h2>
+                <button class="button ghost" id="addItemButton" type="button">Добавить позицию</button>
+              </div>
+              <div class="items-table">
+                <div class="table-head">
+                  <span>№</span>
+                  <span>Наименование</span>
+                  <span>Кол-во</span>
+                  <span>Цена</span>
+                  <span>Сумма</span>
+                  <span></span>
+                </div>
+                <div id="itemsBody"></div>
+              </div>
+              <div class="totals">
+                <span>Итого без НДС: <strong id="totalWithoutVat">0 ₽</strong></span>
+                <span>В том числе НДС: <strong id="vatAmount">0 ₽</strong></span>
+                <span>Итого: <strong id="totalAmount">0 ₽</strong></span>
+              </div>
+            </section>
+
+            <section class="panel span-7">
+              <div class="panel-title row-title">
+                <h2>Техническое описание</h2>
+                <button class="button ghost" id="addTechDescriptionButton" type="button">Добавить описание</button>
+              </div>
+              <div id="techDescriptions" class="tech-descriptions"></div>
+              <label class="checkbox-line">
+                <input name="requestLibraryAdd" type="checkbox" />
+                <span>Запросить добавление описания в библиотеку</span>
+              </label>
+            </section>
+
+            <section class="panel span-5">
+              <div class="panel-title">
+                <h2>Макеты</h2>
+              </div>
+              <label class="upload-zone">
+                <input id="mockupInput" name="mockups" type="file" accept="image/*" multiple />
+                <span>Загрузить изображения макетов</span>
+              </label>
+              <div id="mockupPreview" class="mockup-preview"></div>
+            </section>
+          </section>
+        </form>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
