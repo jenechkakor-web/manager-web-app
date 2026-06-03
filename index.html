@@ -170,11 +170,11 @@
               </label>
               <label>
                 <span>Срок выполнения работ, рабочих дней</span>
-                <input name="workDays" type="number" min="1" step="1" placeholder="10" />
+                <input name="workDays" type="number" min="1" step="1" required />
               </label>
               <label>
                 <span>Адрес монтажа / доставки / работ</span>
-                <textarea name="workAddress" rows="4"></textarea>
+                <textarea name="workAddress" rows="4" required></textarea>
               </label>
             </aside>
 
@@ -201,10 +201,13 @@
               </div>
             </section>
 
-            <section class="panel span-7">
+            <section class="panel span-12">
               <div class="panel-title row-title">
                 <h2>Техническое описание</h2>
-                <button class="button ghost" id="addTechDescriptionButton" type="button">Добавить описание</button>
+                <div class="row-actions">
+                  <button class="button ghost" id="manageTechLibraryButton" type="button">Справочник</button>
+                  <button class="button ghost" id="addTechDescriptionButton" type="button">Добавить описание</button>
+                </div>
               </div>
               <div id="techDescriptions" class="tech-descriptions"></div>
               <label class="checkbox-line">
@@ -212,21 +215,43 @@
                 <span>Запросить добавление описания в библиотеку</span>
               </label>
             </section>
-
-            <section class="panel span-5">
-              <div class="panel-title">
-                <h2>Макеты</h2>
-              </div>
-              <label class="upload-zone">
-                <input id="mockupInput" name="mockups" type="file" accept="image/*" multiple />
-                <span>Загрузить изображения макетов</span>
-              </label>
-              <div id="mockupPreview" class="mockup-preview"></div>
-            </section>
           </section>
         </form>
       </section>
     </main>
+
+    <div class="modal hidden" id="techLibraryModal" role="dialog" aria-modal="true" aria-labelledby="techLibraryTitle">
+      <section class="modal-panel">
+        <div class="modal-header">
+          <h2 id="techLibraryTitle">Справочник тех. описаний</h2>
+          <button class="icon-button" id="closeTechLibraryButton" type="button" title="Закрыть">×</button>
+        </div>
+
+        <div class="admin-login" id="techLibraryLogin">
+          <div class="grid two">
+            <label>
+              <span>Логин</span>
+              <input id="techLibraryLoginInput" autocomplete="username" />
+            </label>
+            <label>
+              <span>Пароль</span>
+              <input id="techLibraryPasswordInput" type="password" autocomplete="current-password" />
+            </label>
+          </div>
+          <div class="modal-actions">
+            <button class="button primary" id="techLibraryLoginButton" type="button">Войти</button>
+          </div>
+        </div>
+
+        <div class="library-editor hidden" id="techLibraryEditor">
+          <div class="modal-actions">
+            <button class="button ghost" id="addTechPresetButton" type="button">Добавить шаблон</button>
+            <button class="button primary" id="saveTechPresetButton" type="button">Сохранить</button>
+          </div>
+          <div class="library-list" id="techPresetEditorList"></div>
+        </div>
+      </section>
+    </div>
     <script src="app.js"></script>
   </body>
 </html>

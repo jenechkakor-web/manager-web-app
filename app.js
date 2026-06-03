@@ -36,14 +36,23 @@ const SELLERS = {
   },
 };
 
-const TECH_PRESETS = {
-  "Световая вывеска с объемными буквами":
-    "Световая вывеска с объемными буквами, лицевой поверхностью из акрила, бортами из ПВХ/алюминия, внутренней LED-подсветкой и креплением на подготовленное основание.",
-  "Несветовая вывеска на композитной основе":
-    "Несветовая вывеска на композитной основе с нанесением пленки/печати, подготовкой крепежных элементов и монтажом на согласованной поверхности.",
-  "Интерьерная навигационная табличка":
-    "Интерьерная навигационная табличка с печатью/аппликацией, защитным покрытием и креплением согласно согласованному макету.",
-};
+const DEFAULT_TECH_PRESETS = [
+  {
+    title: "Световая вывеска с объемными буквами",
+    description:
+      "Световая вывеска с объемными буквами, лицевой поверхностью из акрила, бортами из ПВХ/алюминия, внутренней LED-подсветкой и креплением на подготовленное основание.",
+  },
+  {
+    title: "Несветовая вывеска на композитной основе",
+    description:
+      "Несветовая вывеска на композитной основе с нанесением пленки/печати, подготовкой крепежных элементов и монтажом на согласованной поверхности.",
+  },
+  {
+    title: "Интерьерная навигационная табличка",
+    description:
+      "Интерьерная навигационная табличка с печатью/аппликацией, защитным покрытием и креплением согласно согласованному макету.",
+  },
+];
 
 const form = document.querySelector("#contractForm");
 const itemsBody = document.querySelector("#itemsBody");
@@ -52,15 +61,32 @@ const personFields = document.querySelector("#personFields");
 const totalWithoutVat = document.querySelector("#totalWithoutVat");
 const vatAmount = document.querySelector("#vatAmount");
 const totalAmount = document.querySelector("#totalAmount");
-const mockupInput = document.querySelector("#mockupInput");
-const mockupPreview = document.querySelector("#mockupPreview");
 const sellerDetails = document.querySelector("#sellerDetails");
 const finalPaymentTimingLabel = document.querySelector("#finalPaymentTimingLabel");
 const techDescriptions = document.querySelector("#techDescriptions");
+const techLibraryModal = document.querySelector("#techLibraryModal");
+const techLibraryLogin = document.querySelector("#techLibraryLogin");
+const techLibraryEditor = document.querySelector("#techLibraryEditor");
+const techPresetEditorList = document.querySelector("#techPresetEditorList");
+const techLibraryLoginInput = document.querySelector("#techLibraryLoginInput");
+const techLibraryPasswordInput = document.querySelector("#techLibraryPasswordInput");
 
 let itemId = 0;
-let mockups = [];
 let techId = 0;
+let activeTechCard = null;
+let techPresets = [...DEFAULT_TECH_PRESETS];
+let techLibraryToken = sessionStorage.getItem("techLibraryToken") || "";
+
+const WORD_PAGE_WIDTH = 12240;
+const WORD_PAGE_HEIGHT = 15840;
+const WORD_PAGE_MARGIN_X = 1134;
+const WORD_PAGE_MARGIN_Y = 1134;
+const EMU_PER_DXA = 635;
+const IMAGE_MAX_WIDTH_EMU = (WORD_PAGE_WIDTH - WORD_PAGE_MARGIN_X * 2) * EMU_PER_DXA;
+const IMAGE_MAX_HEIGHT_EMU = Math.round((WORD_PAGE_HEIGHT - WORD_PAGE_MARGIN_Y * 2) * 0.3 * EMU_PER_DXA);
+const WORD_FONT = "Calibri";
+const WORD_FONT_SIZE = 18;
+const WORD_SINGLE_LINE = 240;
 
 function money(value) {
   return new Intl.NumberFormat("ru-RU", {
@@ -109,6 +135,65 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function normalizeTechPresets(source) {
+  const entries = Array.isArray(source)
+    ? source
+    : Object.entries(source || {}).map(([title, description]) => ({ title, description }));
+
+  return entries
+    .map((entry) => ({
+      title: String(entry.title || "").trim(),
+      description: String(entry.description || "").trim(),
+    }))
+    .filter((entry) => entry.title && entry.description);
+}
+
+function techPresetText(title) {
+  return techPresets.find((preset) => preset.title === title)?.description || "";
+}
+
+function techPresetOptions(selected = "") {
+  const hasSelected = techPresets.some((preset) => preset.title === selected);
+  const missingSelected =
+    selected && !hasSelected ? `<option value="${escapeHtml(selected)}">${escapeHtml(selected)}</option>` : "";
+  const options = techPresets
+    .map((preset) => `<option value="${escapeHtml(preset.title)}">${escapeHtml(preset.title)}</option>`)
+    .join("");
+
+  return `<option value="">Выбрать из библиотеки</option>${missingSelected}${options}`;
+}
+
+function refreshTechPresetSelects() {
+  techDescriptions.querySelectorAll(".tech-card").forEach((card) => {
+    const select = card.querySelector(".tech-preset");
+    const selected = card.dataset.preset || select.value || "";
+    select.innerHTML = techPresetOptions(selected);
+    select.value = selected;
+  });
+}
+
+async function loadTechPresets() {
+  const endpoints = ["/api/tech-presets", "templates/tech-presets.json"];
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, { cache: "no-store" });
+      if (!response.ok) continue;
+      const presets = normalizeTechPresets(await response.json());
+      if (presets.length) {
+        techPresets = presets;
+        refreshTechPresetSelects();
+        return;
+      }
+    } catch {
+      // The static fallback is enough when the API is not available.
+    }
+  }
+
+  techPresets = [...DEFAULT_TECH_PRESETS];
+  refreshTechPresetSelects();
+}
+
 function addItem(data = {}) {
   itemId += 1;
   const row = document.createElement("div");
@@ -131,37 +216,334 @@ function addItem(data = {}) {
   recalculate();
 }
 
-function addTechDescription(value = "") {
-  techId += 1;
-  const card = document.createElement("div");
-  card.className = "tech-card";
-  card.innerHTML = `
-    <div class="tech-card-header">
-      <select class="tech-preset">
-        <option value="">Выбрать из библиотеки</option>
-        <option value="Световая вывеска с объемными буквами">Световая вывеска с объемными буквами</option>
-        <option value="Несветовая вывеска на композитной основе">Несветовая вывеска на композитной основе</option>
-        <option value="Интерьерная навигационная табличка">Интерьерная навигационная табличка</option>
-      </select>
-      <button class="icon-button" type="button" title="Удалить описание">×</button>
-    </div>
-    <textarea class="technical-description" rows="6" placeholder="Описание продукта, материалов, размеров, подсветки, крепления и комплектации.">${escapeHtml(value)}</textarea>
-  `;
-  techDescriptions.append(card);
-  card.querySelector(".tech-preset").addEventListener("change", (event) => {
-    const preset = event.target.value;
-    if (preset) card.querySelector(".technical-description").value = TECH_PRESETS[preset];
-  });
-  card.querySelector(".icon-button").addEventListener("click", () => {
-    card.remove();
-    if (!techDescriptions.children.length) addTechDescription();
+function readImageFile(file, fallbackName = "Изображение") {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", async () => {
+      const src = reader.result;
+      const dimensions = await readImageDimensions(src);
+      resolve({
+        name: file.name || fallbackName,
+        src,
+        ...dimensions,
+      });
+    });
+    reader.readAsDataURL(file);
   });
 }
 
-function getTechnicalDescriptions() {
-  return [...techDescriptions.querySelectorAll(".technical-description")]
-    .map((field) => field.value.trim())
+function readImageDimensions(src) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.addEventListener("load", () => {
+      resolve({
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+      });
+    });
+    image.addEventListener("error", () => resolve({}));
+    image.src = src;
+  });
+}
+
+function renderTechImagePreview(card) {
+  const preview = card.querySelector(".tech-image-preview");
+  preview.innerHTML = "";
+
+  card.mockups.forEach((mockup, index) => {
+    const thumb = document.createElement("div");
+    thumb.className = "tech-image-thumb";
+
+    const image = document.createElement("img");
+    image.src = mockup.src;
+    image.alt = mockup.name;
+
+    const removeButton = document.createElement("button");
+    removeButton.className = "icon-button";
+    removeButton.type = "button";
+    removeButton.title = "Удалить изображение";
+    removeButton.textContent = "×";
+    removeButton.addEventListener("click", () => {
+      card.mockups.splice(index, 1);
+      renderTechImagePreview(card);
+    });
+
+    const caption = document.createElement("span");
+    caption.textContent = mockup.name;
+
+    thumb.append(image, removeButton, caption);
+    preview.append(thumb);
+  });
+}
+
+function imageExtension(mime) {
+  if (mime.includes("jpeg") || mime.includes("jpg")) return "jpg";
+  if (mime.includes("webp")) return "webp";
+  return "png";
+}
+
+function setActiveTechCard(card) {
+  if (!card) return;
+  activeTechCard = card;
+  techDescriptions
+    .querySelectorAll(".tech-card")
+    .forEach((item) => item.classList.toggle("is-active", item === card));
+}
+
+async function addImageFilesToCard(card, files, source = "file") {
+  if (!files.length) return;
+
+  setActiveTechCard(card);
+  const images = await Promise.all(
+    files.map((file, index) =>
+      readImageFile(
+        file,
+        source === "clipboard"
+          ? `Изображение из буфера ${index + 1}.${imageExtension(file.type || "")}`
+          : undefined,
+      ),
+    ),
+  );
+  card.mockups.push(...images);
+  renderTechImagePreview(card);
+}
+
+async function handleTechImages(card, event) {
+  const files = [...event.target.files];
+  await addImageFilesToCard(card, files);
+  event.target.value = "";
+}
+
+function clipboardImageFiles(event) {
+  return [...(event.clipboardData?.items || [])]
+    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+    .map((item) => item.getAsFile())
     .filter(Boolean);
+}
+
+async function handleTechPaste(card, event) {
+  const files = clipboardImageFiles(event);
+  if (!files.length) return;
+  event.preventDefault();
+  await addImageFilesToCard(card, files, "clipboard");
+}
+
+async function pasteImagesFromClipboard(card) {
+  if (!navigator.clipboard?.read) {
+    alert("Нажмите Ctrl+V в карточке технического описания.");
+    return;
+  }
+
+  try {
+    const clipboardItems = await navigator.clipboard.read();
+    const files = [];
+
+    for (const item of clipboardItems) {
+      const imageType = item.types.find((type) => type.startsWith("image/"));
+      if (!imageType) continue;
+      const blob = await item.getType(imageType);
+      files.push(
+        new File([blob], `Изображение из буфера ${files.length + 1}.${imageExtension(imageType)}`, {
+          type: imageType,
+        }),
+      );
+    }
+
+    if (!files.length) {
+      alert("В буфере нет изображения.");
+      return;
+    }
+
+    await addImageFilesToCard(card, files, "clipboard");
+  } catch {
+    alert("Не удалось вставить изображение из буфера. Нажмите Ctrl+V в карточке технического описания.");
+  }
+}
+
+function addTechDescription(value = "") {
+  const data = typeof value === "string" ? { description: value, mockups: [] } : value || {};
+  techId += 1;
+  const card = document.createElement("div");
+  card.className = "tech-card";
+  card.tabIndex = 0;
+  card.mockups = [...(data.mockups || data.images || [])];
+  card.innerHTML = `
+    <div class="tech-card-header">
+      <select class="tech-preset">
+        ${techPresetOptions(data.preset || "")}
+      </select>
+      <button class="icon-button" type="button" title="Удалить описание">×</button>
+    </div>
+    <div class="tech-attachments">
+      <div class="tech-attachment-actions">
+        <label class="button ghost tech-upload-button">
+          Приложить изображения
+          <input class="tech-image-input" type="file" accept="image/*" multiple />
+        </label>
+        <button class="button ghost tech-paste-button" type="button">Вставить из буфера</button>
+      </div>
+      <div class="tech-image-preview"></div>
+    </div>
+    <textarea class="technical-description" rows="6" placeholder="Описание продукта, материалов, размеров, подсветки, крепления и комплектации.">${escapeHtml(data.description || "")}</textarea>
+  `;
+  techDescriptions.append(card);
+  card.addEventListener("focusin", () => setActiveTechCard(card));
+  card.addEventListener("pointerdown", (event) => {
+    setActiveTechCard(card);
+    if (!event.target.closest("input, textarea, select, button, label")) card.focus({ preventScroll: true });
+  });
+  card.addEventListener("paste", (event) => handleTechPaste(card, event));
+  card.querySelector(".tech-preset").addEventListener("change", (event) => {
+    const preset = event.target.value;
+    card.dataset.preset = preset;
+    if (preset) card.querySelector(".technical-description").value = techPresetText(preset);
+  });
+  card.querySelector(".tech-image-input").addEventListener("change", (event) => handleTechImages(card, event));
+  card.querySelector(".tech-paste-button").addEventListener("click", () => pasteImagesFromClipboard(card));
+  card.querySelector(".icon-button").addEventListener("click", () => {
+    if (activeTechCard === card) activeTechCard = null;
+    card.remove();
+    if (!techDescriptions.children.length) addTechDescription();
+  });
+  renderTechImagePreview(card);
+  if (data.preset) {
+    card.querySelector(".tech-preset").value = data.preset;
+    card.dataset.preset = data.preset;
+  }
+}
+
+function getTechnicalBlocks() {
+  return [...techDescriptions.querySelectorAll(".tech-card")]
+    .map((card) => ({
+      preset: card.dataset.preset || card.querySelector(".tech-preset").value || "",
+      description: card.querySelector(".technical-description").value.trim(),
+      mockups: [...(card.mockups || [])],
+    }))
+    .filter((block) => block.description || block.mockups.length);
+}
+
+function getTechnicalDescriptions() {
+  return getTechnicalBlocks()
+    .map((block) => block.description)
+    .filter(Boolean);
+}
+
+function showTechLibraryEditor(showEditor) {
+  techLibraryLogin.classList.toggle("hidden", showEditor);
+  techLibraryEditor.classList.toggle("hidden", !showEditor);
+  if (showEditor) renderTechPresetEditor();
+}
+
+function openTechLibraryModal() {
+  techLibraryModal.classList.remove("hidden");
+  showTechLibraryEditor(Boolean(techLibraryToken));
+  if (!techLibraryToken) techLibraryLoginInput.focus();
+}
+
+function closeTechLibraryModal() {
+  techLibraryModal.classList.add("hidden");
+}
+
+function renderTechPresetEditor() {
+  techPresetEditorList.innerHTML = techPresets
+    .map(
+      (preset, index) => `
+        <div class="library-row">
+          <div class="library-row-header">
+            <label>
+              <span>Название шаблона</span>
+              <input class="library-title" value="${escapeHtml(preset.title)}" />
+            </label>
+            <button class="icon-button" data-remove-preset="${index}" type="button" title="Удалить шаблон">×</button>
+          </div>
+          <label>
+            <span>Текст описания</span>
+            <textarea class="library-description" rows="5">${escapeHtml(preset.description)}</textarea>
+          </label>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function readTechPresetEditor() {
+  const rows = [...techPresetEditorList.querySelectorAll(".library-row")];
+  const presets = rows.map((row) => ({
+    title: row.querySelector(".library-title").value.trim(),
+    description: row.querySelector(".library-description").value.trim(),
+  }));
+
+  if (presets.some((preset) => !preset.title || !preset.description)) {
+    alert("Заполните название и текст каждого шаблона.");
+    return null;
+  }
+
+  const titles = presets.map((preset) => preset.title.toLowerCase());
+  if (new Set(titles).size !== titles.length) {
+    alert("Названия шаблонов не должны повторяться.");
+    return null;
+  }
+
+  return presets;
+}
+
+async function loginTechLibrary() {
+  const login = techLibraryLoginInput.value.trim();
+  const password = techLibraryPasswordInput.value;
+
+  try {
+    const response = await fetch("/api/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login, password }),
+    });
+
+    if (!response.ok) {
+      alert("Неверный логин или пароль.");
+      return;
+    }
+
+    const result = await response.json();
+    techLibraryToken = result.token || "";
+    sessionStorage.setItem("techLibraryToken", techLibraryToken);
+    techLibraryPasswordInput.value = "";
+    showTechLibraryEditor(true);
+  } catch {
+    alert("Общее редактирование доступно при запуске через сервер приложения.");
+  }
+}
+
+async function saveTechLibrary() {
+  const presets = readTechPresetEditor();
+  if (!presets) return;
+
+  try {
+    const response = await fetch("/api/tech-presets", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${techLibraryToken}`,
+      },
+      body: JSON.stringify(presets),
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      techLibraryToken = "";
+      sessionStorage.removeItem("techLibraryToken");
+      showTechLibraryEditor(false);
+      alert("Сессия администратора завершена. Войдите снова.");
+      return;
+    }
+
+    if (!response.ok) throw new Error("Save failed");
+
+    techPresets = normalizeTechPresets(await response.json());
+    refreshTechPresetSelects();
+    renderTechPresetEditor();
+    alert("Справочник сохранен.");
+  } catch {
+    alert("Не удалось сохранить справочник.");
+  }
 }
 
 function getItems() {
@@ -223,6 +605,8 @@ function toggleCustomerFields() {
 function collectData() {
   const seller = getSeller();
   const items = getItems();
+  const technicalBlocks = getTechnicalBlocks();
+  const technicalDescriptions = technicalBlocks.map((block) => block.description).filter(Boolean);
   const total = items.reduce((sum, item) => sum + item.sum, 0);
   const vat = (total * seller.vatRate) / (1 + seller.vatRate);
   const customerType = getField("customerType").value;
@@ -254,8 +638,9 @@ function collectData() {
     warranty: getField("warranty").value.trim(),
     workDays: getField("workDays").value.trim(),
     workAddress: getField("workAddress").value.trim(),
-    technicalDescriptions: getTechnicalDescriptions(),
-    technicalDescription: getTechnicalDescriptions().join("\n"),
+    technicalBlocks,
+    technicalDescriptions,
+    technicalDescription: technicalDescriptions.join("\n"),
     requestLibraryAdd: getField("requestLibraryAdd").checked,
     items,
     totals: {
@@ -263,7 +648,7 @@ function collectData() {
       vat,
       grandTotal: total,
     },
-    mockups,
+    mockups: technicalBlocks.flatMap((block) => block.mockups),
   };
 }
 
@@ -309,7 +694,7 @@ function renderItemsTable(items) {
 }
 
 function renderMockups(mockupList) {
-  if (!mockupList.length) return "<p>Макеты не приложены.</p>";
+  if (!mockupList.length) return "";
   return mockupList
     .map(
       (mockup) => `
@@ -322,10 +707,23 @@ function renderMockups(mockupList) {
     .join("");
 }
 
+function renderTechnicalBlocks(data) {
+  const blocks = getDocumentTechnicalBlocks(data);
+  return blocks
+    .map(
+      (block, index) => `
+        ${block.preset ? `<p><strong>${escapeHtml(block.preset)}</strong></p>` : ""}
+        ${renderMockups(block.mockups)}
+        <p>${escapeHtml(block.description || "Техническое описание не указано.")}</p>
+      `,
+    )
+    .join("");
+}
+
 function documentStyles() {
   return `
     <style>
-      body { font-family: "Times New Roman", serif; font-size: 12pt; color: #111; }
+      body { font-family: Calibri, Arial, sans-serif; font-size: 9pt; line-height: 1; color: #111; }
       h1 { text-align: center; font-size: 16pt; margin: 0 0 18px; }
       h2 { font-size: 13pt; margin: 18px 0 8px; }
       p { margin: 7px 0; }
@@ -382,7 +780,7 @@ function renderContract(data) {
         <h2>Гарантийные сроки</h2>
         <p>${escapeHtml(data.warranty)}</p>
         <h2>Техническое описание</h2>
-        <p>${escapeHtml(data.technicalDescription)}</p>
+        ${renderTechnicalBlocks(data)}
         ${
           data.requestLibraryAdd
             ? "<p class=\"muted\">Описание требуется добавить в библиотеку технических описаний.</p>"
@@ -412,9 +810,7 @@ function renderAnnex(data) {
         <h2>Адрес монтажа / доставки / проведения работ</h2>
         <p>${escapeHtml(data.workAddress)}</p>
         <h2>Техническое описание</h2>
-        <p>${escapeHtml(data.technicalDescription)}</p>
-        <h2>Макеты</h2>
-        ${renderMockups(data.mockups)}
+        ${renderTechnicalBlocks(data)}
       </body>
     </html>
   `;
@@ -641,33 +1037,44 @@ function customerDetails(data) {
 function wText(text, options = {}) {
   const safe = escapeXml(text);
   const preserve = /^\s|\s$/.test(text) ? ' xml:space="preserve"' : "";
-  const bold = options.bold ? "<w:b/>" : "";
-  return `<w:r><w:rPr>${bold}</w:rPr><w:t${preserve}>${safe}</w:t></w:r>`;
+  const rPr = options.rPr || "<w:rPr/>";
+  const runProperties = options.bold ? ensureBoldRunProperties(rPr) : rPr;
+  return `<w:r>${runProperties}<w:t${preserve}>${safe}</w:t></w:r>`;
 }
 
 function stripHighlight(xml) {
   return xml.replace(/<w:highlight\b[^/]*\/>/g, "");
 }
 
+function ensureBoldRunProperties(rPr = "<w:rPr/>") {
+  const source = rPr || "<w:rPr/>";
+  if (/<w:b\b/.test(source)) return source;
+  if (source.includes("</w:rPr>")) return source.replace("</w:rPr>", "<w:b/></w:rPr>");
+  return "<w:rPr><w:b/></w:rPr>";
+}
+
+function runPropertiesFromTemplate(original, options = {}) {
+  const rPr = stripHighlight(original.match(/<w:rPr[\s\S]*?<\/w:rPr>/)?.[0] || "<w:rPr/>");
+  return options.bold ? ensureBoldRunProperties(rPr) : rPr;
+}
+
 function wParagraph(text = "", options = {}) {
-  const align = options.align ? `<w:jc w:val="${options.align}"/>` : "";
-  const before = options.before ?? 0;
-  const after = options.after ?? 120;
-  const size = options.size ? `<w:sz w:val="${options.size}"/><w:szCs w:val="${options.size}"/>` : "";
   const bold = options.bold ? "<w:b/>" : "";
+  const align = options.align ? `<w:jc w:val="${options.align}"/>` : "";
+  const pPr = `<w:pPr>${align}</w:pPr>`;
+  const rPr = bold ? "<w:rPr><w:b/></w:rPr>" : "<w:rPr/>";
   const runs = String(text)
     .split("\n")
-    .map((line, index) => `${index ? "<w:br/>" : ""}<w:r><w:rPr>${bold}${size}</w:rPr><w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r>`)
+    .map((line, index) => `${index ? "<w:br/>" : ""}${wText(line, { rPr })}`)
     .join("");
-  return `<w:p><w:pPr><w:spacing w:before="${before}" w:after="${after}"/>${align}</w:pPr>${runs}</w:p>`;
+  return `<w:p>${pPr}${runs}</w:p>`;
 }
 
 function wParagraphRuns(runs, options = {}) {
   const align = options.align ? `<w:jc w:val="${options.align}"/>` : "";
-  const before = options.before ?? 0;
-  const after = options.after ?? 120;
+  const pPr = `<w:pPr>${align}</w:pPr>`;
   const body = runs.map((run) => wText(run.text, { bold: run.bold })).join("");
-  return `<w:p><w:pPr><w:spacing w:before="${before}" w:after="${after}"/>${align}</w:pPr>${body}</w:p>`;
+  return `<w:p>${pPr}${body}</w:p>`;
 }
 
 function wPageBreak() {
@@ -697,9 +1104,30 @@ function wTable(rows, widths) {
 }
 
 function wImage(relId, name, index) {
-  const cx = 5200000;
-  const cy = 3600000;
-  return `<w:p><w:pPr><w:spacing w:before="120" w:after="120"/><w:jc w:val="center"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${index + 1}" name="${escapeXml(name)}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${index + 1}" name="${escapeXml(name)}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+  const image = typeof relId === "object" ? relId : { relId, name, documentIndex: index };
+  const size = imageSizeEmu(image);
+  const cx = size.cx;
+  const cy = size.cy;
+  const docIndex = image.documentIndex ?? index ?? 0;
+  const imageName = image.name || name || "image";
+  const imageRelId = image.relId;
+  return `<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${docIndex + 1}" name="${escapeXml(imageName)}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${docIndex + 1}" name="${escapeXml(imageName)}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${imageRelId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+}
+
+function imageSizeEmu(image) {
+  const width = Number(image.width);
+  const height = Number(image.height);
+  if (width > 0 && height > 0) {
+    const ratio = width / height;
+    let cy = IMAGE_MAX_HEIGHT_EMU;
+    let cx = Math.round(cy * ratio);
+    if (cx > IMAGE_MAX_WIDTH_EMU) {
+      cx = IMAGE_MAX_WIDTH_EMU;
+      cy = Math.round(cx / ratio);
+    }
+    return { cx, cy };
+  }
+  return { cx: IMAGE_MAX_WIDTH_EMU, cy: IMAGE_MAX_HEIGHT_EMU };
 }
 
 function buildCombinedDocumentXml(data, imageRels) {
@@ -708,7 +1136,7 @@ function buildCombinedDocumentXml(data, imageRels) {
   const itemRows = [
     ["№", "Наименование", "Кол-во, шт.", "Цена, руб.", "Сумма, руб."],
     ...data.items.map((item) => [String(item.number), item.name, plainMoney(item.qty), plainMoney(item.price), plainMoney(item.sum)]),
-    ["ИТОГО:", "", "", "", `${money(data.totals.grandTotal)} в т.ч. ${data.seller.vatLabel} ${money(data.totals.vat)}`],
+    ["ИТОГО:", "", "", "", `${money(data.totals.grandTotal)} в т.ч. ${data.seller.vatLabel}`],
   ];
   const body = [
     wParagraph(`ДОГОВОР ПОДРЯДА №${data.contractNumber}`, { align: "center", bold: true, size: 28, after: 160 }),
@@ -750,11 +1178,11 @@ function buildCombinedDocumentXml(data, imageRels) {
     wParagraph(`3.3. Оплата работы производится Заказчиком в следующем порядке: ${data.paymentTerms}.`),
     wParagraph("3.4. Оплата по Договору осуществляется в рублях Российской Федерации, путем перечисления заказчиком денежных средств на расчетный счет Подрядчика."),
     wParagraph("4. Срок проведения и порядок сдачи работ", { bold: true, before: 180 }),
-    wParagraph(`4.1. Срок выполнения работ составляет ${data.workDays} рабочих дней. Подрядчик вправе досрочно выполнить работы по согласованию с Заказчиком.`),
+    wParagraph(`4.1. Срок выполнения работ составляет ${data.workDays} рабочих дней. Подрядчик вправе досрочно выполнить работы по согласованию с Заказчиком.`, { bold: true }),
     wParagraph("4.2. Сдача-приемка выполненных работ по настоящему Договору производится по акту сдачи-приемки работ. Заказчик рассматривает предоставленные документы, подписывает их либо направляет мотивированный отказ."),
     wParagraph("В случае непредоставления доступа к объекту, неподготовленности площадки, отсутствия электропитания либо задержки согласований срок выполнения работ автоматически продлевается на соответствующий период без применения штрафных санкций к Подрядчику."),
     wParagraph("5. Гарантийные обязательства", { bold: true, before: 180 }),
-    wParagraph(`5.1. Подрядчик берет на себя гарантийные обязательства за качество изготавливаемой конструкции в течение ${data.warranty} со дня подписания Заказчиком Акта приемки-передачи выполненных работ.`),
+    wParagraph(`5.1. Подрядчик предоставляет гарантию на выполненные работы сроком ${data.warranty} со дня подписания Заказчиком Акта приемки-передачи выполненных работ.`, { bold: true }),
     wParagraph("5.2. Подрядчик несет ответственность за недостатки, обнаруженные в пределах гарантийного срока, если эти недостатки не явились следствием нормального износа, неправильной эксплуатации, повреждений со стороны третьих лиц либо по иным причинам, независящим от Исполнителя."),
     wParagraph("5.3. Демонтаж и повторный монтаж осуществляется за счет Подрядчика только в случае подтвержденного производственного дефекта. В иных случаях расходы несет Заказчик."),
     wParagraph("5.4. При наступлении гарантийного случая Подрядчик производит диагностику конструкций и комплектующих в течение 3 рабочих дней со дня получения запроса на гарантийное обслуживание от Заказчика."),
@@ -795,8 +1223,7 @@ function buildCombinedDocumentXml(data, imageRels) {
       ],
       [4680, 4680],
     ),
-    wPageBreak(),
-    wParagraph("ПРИЛОЖЕНИЕ № 1", { align: "center", bold: true, size: 28 }),
+    wParagraph("ПРИЛОЖЕНИЕ № 1", { align: "center", bold: true, size: 28, pageBreakBefore: true }),
     wParagraph(`к Договору подряда № ${data.contractNumber} от ${contractDate} года`, { align: "center" }),
     wParagraph("1. Предмет приложения", { bold: true, before: 180 }),
     wParagraph("Исполнитель обязуется выполнить следующие работы:"),
@@ -804,12 +1231,11 @@ function buildCombinedDocumentXml(data, imageRels) {
     wParagraph("1.1.1. Спецификация на изготовление и монтаж рекламной конструкции:", { bold: true }),
     wTable(itemRows, [650, 4200, 1100, 1450, 1960]),
     wParagraph("1.1.2. Техническое задание на изготовление рекламной конструкции:", { bold: true, before: 180 }),
-    wParagraph(data.technicalDescription || "Техническое описание не указано."),
+    technicalBlockXml(data, imageRels),
     wParagraph(`Адрес монтажа / доставки / проведения работ: ${data.workAddress || "не указан"}.`),
     wParagraph(`Срок производства - до ${data.workDays} рабочих дней, ${paymentPhrase(data.paymentTerms)}.`),
     wParagraph(data.paymentTerms === "Без предоплаты" ? "Оплата производится без предоплаты в порядке, согласованном Сторонами." : data.paymentTerms),
-    wParagraph("Макеты:", { bold: true, before: 180 }),
-    ...(imageRels.length ? imageRels.map((image, index) => wImage(image.relId, image.name, index)) : [wParagraph("Макеты не приложены.")]),
+    blankParagraphs(3),
     wTable(
       [[`_____________/ ${sellerShortName(data.seller)}/\nм.п.`, `_____________/ ${customerSign}/\nм.п.`]],
       [4680, 4680],
@@ -924,17 +1350,7 @@ function makeZip(files) {
 }
 
 function buildDocxBlob(data) {
-  const imageFiles = data.mockups.map((mockup, index) => {
-    const { mime, bytes } = base64ToBytes(mockup.src);
-    const ext = mime.includes("jpeg") || mime.includes("jpg") ? "jpg" : mime.includes("webp") ? "webp" : "png";
-    return {
-      name: mockup.name,
-      relId: `rIdImage${index + 1}`,
-      path: `word/media/mockup-${index + 1}.${ext}`,
-      mime,
-      bytes,
-    };
-  });
+  const imageFiles = createImageFilesFromBlocks(data, { relPrefix: "rIdImage", filePrefix: "mockup" });
   const rels = [
     '<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>',
     ...imageFiles.map((image) => `<Relationship Id="${image.relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${image.path.split("/").pop()}"/>`),
@@ -960,7 +1376,7 @@ function buildDocxBlob(data) {
     },
     {
       name: "word/styles.xml",
-      content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style></w:styles>',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr><w:spacing w:line="${WORD_SINGLE_LINE}" w:lineRule="auto"/></w:pPr><w:rPr><w:rFonts w:ascii="${WORD_FONT}" w:hAnsi="${WORD_FONT}" w:cs="${WORD_FONT}"/><w:sz w:val="${WORD_FONT_SIZE}"/><w:szCs w:val="${WORD_FONT_SIZE}"/></w:rPr></w:style></w:styles>`,
     },
     { name: "word/document.xml", content: buildCombinedDocumentXml(data, imageFiles) },
     ...imageFiles.map((image) => ({ name: image.path, content: image.bytes })),
@@ -1032,41 +1448,43 @@ function replaceFile(files, name, content) {
 }
 
 function paragraphText(xml) {
-  return [...xml.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)]
+  return [...xml.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g)]
     .map((match) => match[1].replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&"))
     .join("");
 }
 
-function paragraphFromTemplate(original, text) {
+function paragraphFromTemplate(original, text, options = {}) {
   const pPr = stripHighlight(original.match(/<w:pPr[\s\S]*?<\/w:pPr>/)?.[0] || "");
+  const rPr = runPropertiesFromTemplate(original, options);
   return `<w:p>${pPr}${String(text)
     .split("\n")
-    .map((line, index) => `${index ? "<w:r><w:br/></w:r>" : ""}${wText(line)}`)
+    .map((line, index) => `${index ? "<w:r><w:br/></w:r>" : ""}${wText(line, { rPr })}`)
     .join("")}</w:p>`;
 }
 
-function paragraphRunsFromTemplate(original, runs) {
+function paragraphRunsFromTemplate(original, runs, options = {}) {
   const pPr = stripHighlight(original.match(/<w:pPr[\s\S]*?<\/w:pPr>/)?.[0] || "");
-  return `<w:p>${pPr}${runs.map((run) => wText(run.text, { bold: run.bold })).join("")}</w:p>`;
+  const baseRPr = runPropertiesFromTemplate(original, options);
+  return `<w:p>${pPr}${runs.map((run) => wText(run.text, { rPr: baseRPr, bold: run.bold })).join("")}</w:p>`;
 }
 
-function replaceParagraphByPredicate(xml, predicate, text) {
+function replaceParagraphByPredicate(xml, predicate, text, options = {}) {
   let replaced = false;
   return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
     if (!replaced && predicate(paragraphText(paragraph))) {
       replaced = true;
-      return paragraphFromTemplate(paragraph, text);
+      return paragraphFromTemplate(paragraph, text, options);
     }
     return paragraph;
   });
 }
 
-function replaceParagraphRunsByPredicate(xml, predicate, runs) {
+function replaceParagraphRunsByPredicate(xml, predicate, runs, options = {}) {
   let replaced = false;
   return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
     if (!replaced && predicate(paragraphText(paragraph))) {
       replaced = true;
-      return paragraphRunsFromTemplate(paragraph, runs);
+      return paragraphRunsFromTemplate(paragraph, runs, options);
     }
     return paragraph;
   });
@@ -1101,6 +1519,25 @@ function replaceParagraphRangeWithXml(xml, startPredicate, endPredicate, replace
   return xml.slice(0, paragraphs[start + 1].start) + replacementXml + xml.slice(paragraphs[end].start);
 }
 
+function removeEmptyParagraphsBeforeAppendix(xml) {
+  const paragraphs = [...xml.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)].map((match) => ({
+    xml: match[0],
+    start: match.index,
+    end: match.index + match[0].length,
+    text: paragraphText(match[0]),
+  }));
+  const appendix = paragraphs.findIndex((paragraph) => paragraph.text.includes("ПРИЛОЖЕНИЕ № 1"));
+  if (appendix < 0) return xml;
+
+  let removeFrom = paragraphs[appendix].start;
+  for (let index = appendix - 1; index >= 0; index -= 1) {
+    if (paragraphs[index].text.trim()) break;
+    removeFrom = paragraphs[index].start;
+  }
+
+  return xml.slice(0, removeFrom) + xml.slice(paragraphs[appendix].start);
+}
+
 function replaceTableAt(xml, tableIndex, replacement) {
   let index = -1;
   return xml.replace(/<w:tbl\b[\s\S]*?<\/w:tbl>/g, (table) => {
@@ -1109,20 +1546,183 @@ function replaceTableAt(xml, tableIndex, replacement) {
   });
 }
 
+function updateTableAt(xml, tableIndex, updater) {
+  let index = -1;
+  return xml.replace(/<w:tbl\b[\s\S]*?<\/w:tbl>/g, (table) => {
+    index += 1;
+    return index === tableIndex ? updater(table) : table;
+  });
+}
+
+function tableRows(tableXml) {
+  return [...tableXml.matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g)].map((match) => ({
+    xml: match[0],
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+}
+
+function normalizeCellText(cell) {
+  if (cell && typeof cell === "object" && !Array.isArray(cell)) return cell;
+  return { text: cell };
+}
+
+function replaceCellText(cellXml, value) {
+  const cell = normalizeCellText(value);
+  const paragraphs = [...cellXml.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)].map((match) => ({
+    xml: match[0],
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+  const template = paragraphs[0]?.xml || "<w:p><w:r><w:rPr/><w:t></w:t></w:r></w:p>";
+  const lines = String(cell.text ?? "").split("\n");
+  const replacement = lines.map((line) => paragraphFromTemplate(template, line, { bold: cell.bold })).join("");
+
+  if (!paragraphs.length) return cellXml.replace("</w:tc>", `${replacement}</w:tc>`);
+  return cellXml.slice(0, paragraphs[0].start) + replacement + cellXml.slice(paragraphs.at(-1).end);
+}
+
+function replaceRowCells(rowXml, values) {
+  let cellIndex = -1;
+  return rowXml.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, (cellXml) => {
+    cellIndex += 1;
+    return cellIndex < values.length ? replaceCellText(cellXml, values[cellIndex]) : cellXml;
+  });
+}
+
+function replaceTableCellRows(tableXml, rowValues) {
+  let rowIndex = -1;
+  return tableXml.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, (rowXml) => {
+    rowIndex += 1;
+    return rowValues[rowIndex] ? replaceRowCells(rowXml, rowValues[rowIndex]) : rowXml;
+  });
+}
+
+function updatePartiesTable(tableXml, data) {
+  const customerSign = customerSignatureName(data);
+  return replaceTableCellRows(tableXml, [
+    null,
+    [
+      { text: contractorDetails(data) },
+      { text: customerDetails(data) },
+    ],
+    [
+      { text: `_____________/ ${sellerShortName(data.seller)}/\nм.п.` },
+      { text: `_____________/ ${customerSign}/\nм.п.` },
+    ],
+  ]);
+}
+
+function updateSpecTable(tableXml, data) {
+  const rows = tableRows(tableXml);
+  if (rows.length < 3) return templateSpecTable(data);
+
+  const itemTemplate = rows[1].xml;
+  const totalTemplate = rows[rows.length - 1].xml;
+  const itemRows = data.items.map((item) =>
+    replaceRowCells(itemTemplate, [
+      String(item.number),
+      item.name,
+      plainMoney(item.qty),
+      plainMoney(item.price),
+      plainMoney(item.sum),
+    ]),
+  );
+  const totalRow = replaceRowCells(totalTemplate, [
+    "",
+    "",
+    "",
+    { text: "ИТОГО:", bold: true },
+    { text: `${docMoney(data.totals.grandTotal)} в т.ч.\n${data.seller.vatLabel}`, bold: true },
+  ]);
+  const replacementRows = [rows[0].xml, ...itemRows, totalRow].join("");
+
+  return tableXml.slice(0, rows[0].start) + replacementRows + tableXml.slice(rows.at(-1).end);
+}
+
+function updateSignaturesTable(tableXml, data) {
+  const customerSign = customerSignatureName(data);
+  return replaceTableCellRows(tableXml, [
+    [
+      { text: `_____________/ ${sellerShortName(data.seller)}/\nм.п.` },
+      { text: `_____________/ ${customerSign}/\nм.п.` },
+    ],
+  ]);
+}
+
+function blankParagraphs(count) {
+  return Array.from({ length: count }, () => wParagraph("")).join("");
+}
+
+function getDocumentTechnicalBlocks(data) {
+  if (Array.isArray(data.technicalBlocks) && data.technicalBlocks.length) {
+    return data.technicalBlocks.map((block) => ({
+      preset: block.preset || "",
+      description: block.description || "",
+      mockups: [...(block.mockups || block.images || [])],
+    }));
+  }
+
+  const descriptions = data.technicalDescriptions?.length
+    ? data.technicalDescriptions
+    : data.technicalDescription
+      ? [data.technicalDescription]
+      : [];
+  const legacyMockups = [...(data.mockups || [])];
+
+  if (descriptions.length) {
+    return descriptions.map((description, index) => ({
+      preset: "",
+      description,
+      mockups: index === 0 ? legacyMockups : [],
+    }));
+  }
+
+  if (legacyMockups.length) return [{ preset: "", description: "", mockups: legacyMockups }];
+  return [{ preset: "", description: "Техническое описание не указано.", mockups: [] }];
+}
+
+function createImageFilesFromBlocks(data, options = {}) {
+  const blocks = getDocumentTechnicalBlocks(data);
+  const relPrefix = options.relPrefix || "rIdImage";
+  const filePrefix = options.filePrefix || "mockup";
+  const idOffset = options.idOffset || 0;
+  let imageIndex = 0;
+
+  return blocks.flatMap((block, blockIndex) =>
+    (block.mockups || []).map((mockup) => {
+      imageIndex += 1;
+      const { mime, bytes } = base64ToBytes(mockup.src);
+      const ext = mime.includes("jpeg") || mime.includes("jpg") ? "jpg" : mime.includes("webp") ? "webp" : "png";
+      return {
+        name: mockup.name,
+        relId: `${relPrefix}${imageIndex}`,
+        path: `word/media/${filePrefix}-${imageIndex}.${ext}`,
+        target: `media/${filePrefix}-${imageIndex}.${ext}`,
+        mime,
+        bytes,
+        width: mockup.width,
+        height: mockup.height,
+        blockIndex,
+        documentIndex: idOffset + imageIndex - 1,
+      };
+    }),
+  );
+}
+
 function technicalBlockXml(data, imageRels) {
-  const descriptions = data.technicalDescriptions?.length ? data.technicalDescriptions : [data.technicalDescription || "Техническое описание не указано."];
-  const descriptionXml = descriptions
-    .flatMap((description, index) => {
-      const lines = description.split(/\n+/).filter(Boolean);
-      const prefix = descriptions.length > 1 ? [`Описание ${index + 1}:`] : [];
-      return [...prefix, ...lines];
+  const blocks = getDocumentTechnicalBlocks(data);
+  return blocks
+    .map((block, blockIndex) => {
+      const blockImages = imageRels.filter((image) => image.blockIndex === blockIndex);
+      const heading = block.preset || "";
+      const prefixXml = heading ? wParagraph(heading, { bold: true }) : "";
+      const imagesXml = blockImages.map((image) => `${blankParagraphs(1)}${wImage(image)}${blankParagraphs(1)}`).join("");
+      const lines = (block.description || "Техническое описание не указано.").split(/\n+/).filter(Boolean);
+      const descriptionXml = lines.map((line) => wParagraph(line)).join("");
+      return prefixXml + imagesXml + descriptionXml;
     })
-    .map((line) => wParagraph(line))
     .join("");
-  const imagesXml = imageRels.length
-    ? imageRels.map((image, index) => wImage(image.relId, image.name, index + 20)).join("")
-    : "";
-  return descriptionXml + imagesXml;
 }
 
 function addRelationshipXml(relsXml, relId, target) {
@@ -1141,7 +1741,7 @@ function templateSpecTable(data) {
     [
       ["№", "Наименование", "Кол-во, шт.", "Цена, руб.", "Сумма, руб."],
       ...data.items.map((item) => [String(item.number), item.name, plainMoney(item.qty), plainMoney(item.price), plainMoney(item.sum)]),
-      ["", "", "", { text: "ИТОГО:", bold: true, align: "left" }, { text: `${docMoney(data.totals.grandTotal)} в т.ч.\n${data.seller.vatLabel} ${docMoney(data.totals.vat)}`, bold: true, align: "center" }],
+      ["", "", "", { text: "ИТОГО:", bold: true, align: "left" }, { text: `${docMoney(data.totals.grandTotal)} в т.ч.\n${data.seller.vatLabel}`, bold: true, align: "center" }],
     ],
     [650, 4200, 1100, 1450, 1960],
   );
@@ -1161,24 +1761,23 @@ function templatePartiesTable(data) {
 
 function templateSignaturesTable(data) {
   const customerSign = customerSignatureName(data);
-  return wTable([[{ text: `_____________/ ${sellerShortName(data.seller)}/\nм.п.`, align: "center" }, { text: `_____________/ ${customerSign}/\nм.п.`, align: "center" }]], [4680, 4680]);
+  return `${blankParagraphs(3)}${wTable(
+    [
+      ["Подрядчик:", "Заказчик:"],
+      [{ text: `_____________/ ${sellerShortName(data.seller)}/\nм.п.`, align: "center" }, { text: `_____________/ ${customerSign}/\nм.п.`, align: "center" }],
+    ],
+    [4680, 4680],
+  )}`;
 }
 
 async function buildTemplateDocxBlob(data) {
   const response = await fetch("dogovor_final.docx");
   if (!response.ok) throw new Error("Template not found");
   const files = await unzipDocx(await response.arrayBuffer());
-  const imageFiles = data.mockups.map((mockup, index) => {
-    const { mime, bytes } = base64ToBytes(mockup.src);
-    const ext = mime.includes("jpeg") || mime.includes("jpg") ? "jpg" : mime.includes("webp") ? "webp" : "png";
-    return {
-      name: mockup.name,
-      relId: `rIdMockup${index + 1}`,
-      path: `word/media/generated-mockup-${index + 1}.${ext}`,
-      target: `media/generated-mockup-${index + 1}.${ext}`,
-      mime,
-      bytes,
-    };
+  const imageFiles = createImageFilesFromBlocks(data, {
+    relPrefix: "rIdMockup",
+    filePrefix: "generated-mockup",
+    idOffset: 20,
   });
 
   let documentXml = fileText(files, "word/document.xml");
@@ -1190,11 +1789,21 @@ async function buildTemplateDocxBlob(data) {
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("ДОГОВОР ПОДРЯДА №"), `ДОГОВОР ПОДРЯДА №${data.contractNumber}`);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("г. Москва") && text.includes("года"), `г. Москва\t«${day}» ${month} ${year} года`);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("именуем") && text.includes("Стороны") && text.includes("заключили настоящий Договор"), partyIntro(data));
-  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("4.1.") || text.startsWith("Сроки выполнения работ устанавливаются"), `Срок выполнения работ составляет ${data.workDays} рабочих дней. Подрядчик вправе досрочно выполнить работы по согласованию с Заказчиком.`);
+  documentXml = replaceParagraphByPredicate(
+    documentXml,
+    (text) => text.startsWith("4.1.") || text.startsWith("Сроки выполнения работ устанавливаются"),
+    `Срок выполнения работ составляет ${data.workDays} рабочих дней. Подрядчик вправе досрочно выполнить работы по согласованию с Заказчиком.`,
+    { bold: true },
+  );
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("5.1.1."), `5.1.1. За качество светодиодной продукции в течение ${data.warranty} со дня подписания Заказчиком Акта приемки-передачи выполненных работ.`);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("5.1.2."), `5.1.2. За качество конструктивных составляющих (металлокаркас, корпус) в течение ${data.warranty} со дня подписания Заказчиком Акта приемки-передачи выполненных работ.`);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("5.1.3."), `5.1.3. За качество блоков питания в течение ${data.warranty} со дня подписания Заказчиком Акта приемки-передачи выполненных работ.`);
-  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("Подрядчик предоставляет гарантию на выполненные работы сроком"), `5.2. Подрядчик предоставляет гарантию на выполненные работы сроком ${data.warranty} со дня подписания Заказчиком Акта приемки-передачи выполненных работ.`);
+  documentXml = replaceParagraphByPredicate(
+    documentXml,
+    (text) => text.includes("Подрядчик предоставляет гарантию на выполненные работы сроком"),
+    `5.2. Подрядчик предоставляет гарантию на выполненные работы сроком ${data.warranty} со дня подписания Заказчиком Акта приемки-передачи выполненных работ.`,
+    { bold: true },
+  );
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("к Договору подряда №"), `к Договору подряда № ${data.contractNumber} от ${contractDate} года`);
   documentXml = replaceParagraphRunsByPredicate(documentXml, (text) => text.includes("Оплата настоящего Договора производится на следующих условиях"), buildPaymentTermsRuns(data));
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("Адрес монтажа") || text.includes("Адрес доставки"), `1.1.3. Адрес монтажа (доставки) конструкции: ${data.workAddress || "не указан"}`);
@@ -1206,9 +1815,9 @@ async function buildTemplateDocxBlob(data) {
     technicalBlockXml(data, imageFiles),
   );
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("Срок производства") || text.includes("Срок производства (монтажа)"), `1.1.5. Срок производства (монтажа) – до ${data.workDays} рабочих дней, ${paymentPhrase(data.paymentTerms)}.`);
-  documentXml = replaceTableAt(documentXml, 0, templatePartiesTable(data));
-  documentXml = replaceTableAt(documentXml, 1, templateSpecTable(data));
-  documentXml = replaceTableAt(documentXml, 2, templateSignaturesTable(data));
+  documentXml = updateTableAt(documentXml, 0, (table) => updatePartiesTable(table, data));
+  documentXml = updateTableAt(documentXml, 1, (table) => updateSpecTable(table, data));
+  documentXml = updateTableAt(documentXml, 2, (table) => updateSignaturesTable(table, data));
 
   let relsXml = fileText(files, "word/_rels/document.xml.rels");
   let contentTypesXml = fileText(files, "[Content_Types].xml");
@@ -1259,8 +1868,13 @@ function loadDraft() {
     setField("workDays", data.workDays);
     setField("workAddress", data.workAddress);
     techDescriptions.innerHTML = "";
-    const descriptions = data.technicalDescriptions?.length ? data.technicalDescriptions : [data.technicalDescription || ""];
-    descriptions.forEach((description) => addTechDescription(description));
+    const blocks = data.technicalBlocks?.length
+      ? data.technicalBlocks
+      : (data.technicalDescriptions?.length ? data.technicalDescriptions : [data.technicalDescription || ""]).map((description, index) => ({
+          description,
+          mockups: index === 0 ? data.mockups || [] : [],
+        }));
+    blocks.forEach((block) => addTechDescription(block));
     getField("requestLibraryAdd").checked = Boolean(data.requestLibraryAdd);
 
     itemsBody.innerHTML = "";
@@ -1317,29 +1931,6 @@ async function lookupInn() {
   }
 }
 
-function handleMockups(event) {
-  const files = [...event.target.files];
-  mockups = [];
-  mockupPreview.innerHTML = "";
-
-  files.forEach((file) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      const mockup = {
-        name: file.name,
-        src: reader.result,
-      };
-      mockups.push(mockup);
-
-      const image = document.createElement("img");
-      image.src = mockup.src;
-      image.alt = file.name;
-      mockupPreview.append(image);
-    });
-    reader.readAsDataURL(file);
-  });
-}
-
 document.querySelector("#addItemButton").addEventListener("click", () => addItem());
 document.querySelector("#saveDraftButton").addEventListener("click", saveDraft);
 document.querySelector("#lookupInnButton").addEventListener("click", lookupInn);
@@ -1355,7 +1946,26 @@ document.querySelector("#downloadContractButton").addEventListener("click", asyn
   }
 });
 document.querySelector("#addTechDescriptionButton").addEventListener("click", () => addTechDescription());
-mockupInput.addEventListener("change", handleMockups);
+document.querySelector("#manageTechLibraryButton").addEventListener("click", openTechLibraryModal);
+document.querySelector("#closeTechLibraryButton").addEventListener("click", closeTechLibraryModal);
+document.querySelector("#techLibraryLoginButton").addEventListener("click", loginTechLibrary);
+document.querySelector("#saveTechPresetButton").addEventListener("click", saveTechLibrary);
+document.querySelector("#addTechPresetButton").addEventListener("click", () => {
+  techPresets.push({ title: "", description: "" });
+  renderTechPresetEditor();
+});
+techPresetEditorList.addEventListener("click", (event) => {
+  const removeButton = event.target.closest("[data-remove-preset]");
+  if (!removeButton) return;
+  techPresets.splice(Number(removeButton.dataset.removePreset), 1);
+  renderTechPresetEditor();
+});
+techLibraryPasswordInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") loginTechLibrary();
+});
+techLibraryModal.addEventListener("click", (event) => {
+  if (event.target === techLibraryModal) closeTechLibraryModal();
+});
 form.addEventListener("change", (event) => {
   if (event.target.name === "customerType") toggleCustomerFields();
   if (event.target.name === "paymentTerms") toggleFinalPaymentTiming();
@@ -1365,9 +1975,14 @@ form.addEventListener("change", (event) => {
   }
 });
 
-setField("contractDate", todayIso());
-addItem();
-addTechDescription();
-renderSellerDetails();
-toggleFinalPaymentTiming();
-loadDraft();
+async function initApp() {
+  setField("contractDate", todayIso());
+  await loadTechPresets();
+  addItem();
+  addTechDescription();
+  renderSellerDetails();
+  toggleFinalPaymentTiming();
+  loadDraft();
+}
+
+initApp();
