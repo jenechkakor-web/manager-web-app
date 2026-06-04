@@ -7,6 +7,9 @@ const SELLERS = {
     inn: "500805209810",
     ogrn: "320508100357479",
     ogrnLabel: "ОГРНИП",
+    legalAddress: "143930 МО, г. Балашиха, Мирской пр-д, 9",
+    phone: "8 (909) 655-98-48",
+    email: "kuporov.biz@yandex.ru",
     checkingAccount: "40802810320000702819",
     bankName: 'ООО "Банк Точка"',
     bankInn: "9721194461",
@@ -614,6 +617,7 @@ function collectData() {
   return {
     contractNumber: getField("contractNumber").value.trim(),
     contractDate: getField("contractDate").value,
+    documentTemplate: getField("documentTemplate").value,
     seller,
     customerType,
     customer:
@@ -925,6 +929,109 @@ function paymentAmountRuns(amount) {
 
 function docMoney(amount) {
   return `${plainMoney(amount)} руб.`;
+}
+
+function invoiceMoney(amount) {
+  return new Intl.NumberFormat("ru-RU", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(Number(amount)) ? Number(amount) : 0);
+}
+
+function longDateText(dateValue) {
+  if (!dateValue) return "";
+  const date = new Date(`${dateValue}T00:00:00`);
+  const day = new Intl.DateTimeFormat("ru-RU", { day: "numeric" }).format(date);
+  const month = new Intl.DateTimeFormat("ru-RU", { month: "long" }).format(date);
+  const year = date.getFullYear();
+  return `${day} ${month} ${year}`;
+}
+
+function workDaysText(value) {
+  const words = {
+    1: "одного",
+    2: "двух",
+    3: "трех",
+    4: "четырех",
+    5: "пяти",
+    6: "шести",
+    7: "семи",
+    8: "восьми",
+    9: "девяти",
+    10: "десяти",
+    11: "одиннадцати",
+    12: "двенадцати",
+    13: "тринадцати",
+    14: "четырнадцати",
+    15: "пятнадцати",
+    20: "двадцати",
+    30: "тридцати",
+  };
+  const days = Number(value) || 0;
+  return words[days] ? `${days} (${words[days]})` : String(days || value || "");
+}
+
+function sellerAddress(seller) {
+  return seller.legalAddress || "";
+}
+
+function invoiceSellerIntro(seller) {
+  const address = sellerAddress(seller);
+  return `Исполнитель: ${sellerShortName(seller)} (ИНН: ${seller.inn} / ${seller.ogrnLabel}: ${seller.ogrn}${address ? ` / ${address}` : ""})`;
+}
+
+function invoiceContractorLines(data) {
+  const seller = data.seller;
+  return {
+    name: `${sellerShortName(seller)} ИНН ${seller.inn} КПП ${seller.kpp || "-"}`,
+    address: `Адрес: ${sellerAddress(seller)}${seller.phone ? ` Т. ${seller.phone}` : ""}`,
+    email: `${seller.email ? `Email: ${seller.email} ` : ""}Р/С № ${seller.checkingAccount}`,
+    bank: `В ${seller.bankName}`,
+    correspondent: `К/С № ${seller.correspondentAccount}`,
+    bik: `БИК: ${seller.bankBik}`,
+  };
+}
+
+function invoiceCustomerLines(data) {
+  if (data.customerType === "legal") {
+    return {
+      name: data.customer.name || "Заказчик",
+      address: data.customer.address ? `Юр. Адрес: ${data.customer.address}` : "Юр. Адрес:",
+      inn: `ИНН: ${data.customer.inn || ""}${data.customer.kpp ? ` КПП: ${data.customer.kpp}` : ""}`,
+      ogrn: `ОГРН: ${data.customer.ogrn || ""}`,
+      account: "р/с:",
+      bik: "БИК:",
+      correspondent: "к/с:",
+    };
+  }
+
+  return {
+    name: data.customer.name || "Заказчик",
+    address: data.customer.address ? `Адрес регистрации: ${data.customer.address}` : "Адрес регистрации:",
+    inn: data.customer.passport ? `Паспорт: ${data.customer.passport}` : "Паспорт:",
+    ogrn: "",
+    account: "",
+    bik: "",
+    correspondent: "",
+  };
+}
+
+function invoicePaymentTermsText(data) {
+  const percent = Number(data.paymentTerms) || 0;
+  const total = data.totals.grandTotal;
+  const prefix = "Оплата настоящего Счет-Договора производится следующим образом: ";
+
+  if (percent === 100) {
+    return `${prefix}Предоплата в размере ${docMoney(total)} (${rubleWords(total)}) в течение 5 (пяти) рабочих дней от даты его составления.`;
+  }
+
+  if (percent > 0) {
+    const prepay = (total * percent) / 100;
+    const rest = total - prepay;
+    return `${prefix}Предоплата ${percent}% в размере ${docMoney(prepay)} (${rubleWords(prepay)}) в течение 5 (пяти) рабочих дней от даты его составления, оплата остатка ${100 - percent}% в размере ${docMoney(rest)} (${rubleWords(rest)}) ${finalPaymentTimingText(data.finalPaymentTiming)}.`;
+  }
+
+  return `${prefix}Оплата в размере ${docMoney(total)} (${rubleWords(total)}) ${finalPaymentTimingText(data.finalPaymentTiming)}.`;
 }
 
 function buildPaymentTermsText(data) {
@@ -1462,6 +1569,20 @@ function paragraphFromTemplate(original, text, options = {}) {
     .join("")}</w:p>`;
 }
 
+function paragraphFromTemplateWithLeadingBreaks(original, text, options = {}) {
+  const pPr = stripHighlight(original.match(/<w:pPr[\s\S]*?<\/w:pPr>/)?.[0] || "");
+  const rPr = runPropertiesFromTemplate(original, options);
+  const leadingBreakRuns = [];
+  const runs = [...original.matchAll(/<w:r\b[\s\S]*?<\/w:r>/g)];
+
+  for (const run of runs) {
+    if (/<w:t\b/.test(run[0])) break;
+    if (/<w:br\b/.test(run[0])) leadingBreakRuns.push(run[0]);
+  }
+
+  return `<w:p>${pPr}${leadingBreakRuns.join("")}${wText(text, { rPr })}</w:p>`;
+}
+
 function paragraphRunsFromTemplate(original, runs, options = {}) {
   const pPr = stripHighlight(original.match(/<w:pPr[\s\S]*?<\/w:pPr>/)?.[0] || "");
   const baseRPr = runPropertiesFromTemplate(original, options);
@@ -1474,6 +1595,17 @@ function replaceParagraphByPredicate(xml, predicate, text, options = {}) {
     if (!replaced && predicate(paragraphText(paragraph))) {
       replaced = true;
       return paragraphFromTemplate(paragraph, text, options);
+    }
+    return paragraph;
+  });
+}
+
+function replaceParagraphByPredicateWithLeadingBreaks(xml, predicate, text, options = {}) {
+  let replaced = false;
+  return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
+    if (!replaced && predicate(paragraphText(paragraph))) {
+      replaced = true;
+      return paragraphFromTemplateWithLeadingBreaks(paragraph, text, options);
     }
     return paragraph;
   });
@@ -1647,6 +1779,46 @@ function updateSignaturesTable(tableXml, data) {
       { text: `_____________/ ${sellerShortName(data.seller)}/\nм.п.` },
       { text: `_____________/ ${customerSign}/\nм.п.` },
     ],
+  ]);
+}
+
+function updateInvoiceBankTable(tableXml, data) {
+  const seller = data.seller;
+  return replaceTableCellRows(tableXml, [
+    [`ИНН\n${seller.inn}`, `КПП\n${seller.kpp || ""}`, "Сч.№", `р/с: ${seller.checkingAccount}`],
+    [`Получатель: ${seller.fullName}`, "", ""],
+    [`Банк получателя: ${seller.bankName}`, "БИК", seller.bankBik],
+    ["", "Сч.№", `к/с: ${seller.correspondentAccount}`],
+  ]);
+}
+
+function updateInvoiceItemsTable(tableXml, data) {
+  const rows = tableRows(tableXml);
+  if (rows.length < 4) return tableXml;
+
+  const itemTemplate = rows[1].xml;
+  const totalTemplate = rows[rows.length - 2].xml;
+  const wordsTemplate = rows[rows.length - 1].xml;
+  const itemRows = data.items.map((item) =>
+    replaceRowCells(itemTemplate, [
+      `${item.number}.`,
+      item.name,
+      `${plainMoney(item.qty)} (шт)`,
+      invoiceMoney(item.price),
+      invoiceMoney(item.sum),
+    ]),
+  );
+  const totalRow = replaceRowCells(totalTemplate, ["", `Итого с ${data.seller.vatLabel}`, invoiceMoney(data.totals.grandTotal)]);
+  const wordsRow = replaceRowCells(wordsTemplate, ["", `Сумма прописью: ${rubleWords(data.totals.grandTotal)}`]);
+  const replacementRows = [rows[0].xml, ...itemRows, totalRow, wordsRow].join("");
+
+  return tableXml.slice(0, rows[0].start) + replacementRows + tableXml.slice(rows.at(-1).end);
+}
+
+function updateInvoiceSignatureTable(tableXml, data) {
+  return replaceTableCellRows(tableXml, [
+    null,
+    [`/ ${sellerShortName(data.seller)} М.П.`, `/ ${customerSignatureName(data)} М.П. / Подпись`],
   ]);
 }
 
@@ -1833,6 +2005,90 @@ async function buildTemplateDocxBlob(data) {
   return makeZip(files);
 }
 
+async function buildInvoiceContractDocxBlob(data) {
+  const response = await fetch("schet_dogovor_template.docx");
+  if (!response.ok) throw new Error("Template not found");
+  const files = await unzipDocx(await response.arrayBuffer());
+  const imageFiles = createImageFilesFromBlocks(data, {
+    relPrefix: "rIdInvoiceMockup",
+    filePrefix: "invoice-mockup",
+    idOffset: 40,
+  });
+
+  const longDate = longDateText(data.contractDate);
+  const contractor = invoiceContractorLines(data);
+  const customer = invoiceCustomerLines(data);
+  let documentXml = fileText(files, "word/document.xml");
+
+  documentXml = replaceParagraphByPredicate(
+    documentXml,
+    (text) => text.startsWith("Счет-договор на выполнение работ"),
+    `Счет-договор на выполнение работ и/или услуг № ${data.contractNumber} от ${longDate} г.`,
+  );
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Исполнитель:"), invoiceSellerIntro(data.seller));
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("Балашиха") && text.includes("Мирской"), "");
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("ИП КУПОРОВА") && text.includes("ИНН"), contractor.name, { bold: true });
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Адрес:"), contractor.address);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Email:"), contractor.email);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("В ООО") || text.startsWith("В "), contractor.bank);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("К/С"), contractor.correspondent);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("БИК:") && text.includes("044525104"), contractor.bik);
+  documentXml = replaceParagraphByPredicateWithLeadingBreaks(documentXml, (text) => text.includes('"ИНТЕКТЕХНО"'), customer.name);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Юр. Адрес:"), customer.address);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("ИНН:") && text.includes("7718214883"), customer.inn);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("ОГРН:"), customer.ogrn);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("р/с:"), customer.account);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("БИК:") && text.includes("044525685"), customer.bik);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("к/с:"), customer.correspondent);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Адрес доставки и установки:"), `Адрес доставки и установки: ${data.workAddress || "не указан"}`);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Оплата настоящего Счет-Договора производится"), invoicePaymentTermsText(data));
+  documentXml = replaceParagraphByPredicate(
+    documentXml,
+    (text) => text.startsWith("Поставщик обязан доставить"),
+    `Поставщик обязан доставить (отгрузить) оплаченный товар и передать его Заказчику в течение ${workDaysText(data.workDays)} рабочих дней с момента зачисления оплаты на расчетный счет Поставщика и согласования макета Сторонами.`,
+  );
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Гарантия на поставляемый товар составляет"), `Гарантия на поставляемый товар составляет ${data.warranty} с даты поставки товара.`);
+  documentXml = replaceParagraphByPredicate(
+    documentXml,
+    (text) => text.startsWith("Приложение №1 К Счет-договору"),
+    `Приложение №1 К Счет-договору на поставку товара № ${data.contractNumber} от ${longDate} г.`,
+  );
+  documentXml = replaceParagraphRangeWithXml(
+    documentXml,
+    (text) => text.includes("Описание конструкции:"),
+    (text) => text === "Поставщик:",
+    technicalBlockXml(data, imageFiles),
+  );
+  documentXml = updateTableAt(documentXml, 0, (table) => updateInvoiceBankTable(table, data));
+  documentXml = updateTableAt(documentXml, 1, (table) => updateInvoiceItemsTable(table, data));
+  documentXml = updateTableAt(documentXml, 2, (table) => updateInvoiceSignatureTable(table, data));
+  documentXml = updateTableAt(documentXml, 3, (table) => updateInvoiceSignatureTable(table, data));
+
+  let relsXml = fileText(files, "word/_rels/document.xml.rels");
+  let contentTypesXml = fileText(files, "[Content_Types].xml");
+  imageFiles.forEach((image) => {
+    relsXml = addRelationshipXml(relsXml, image.relId, image.target);
+    contentTypesXml = ensureImageContentType(contentTypesXml, image.mime);
+    replaceFile(files, image.path, image.bytes);
+  });
+
+  replaceFile(files, "word/document.xml", documentXml);
+  replaceFile(files, "word/_rels/document.xml.rels", relsXml);
+  replaceFile(files, "[Content_Types].xml", contentTypesXml);
+  return makeZip(files);
+}
+
+function contractDownloadName(data) {
+  const number = data.contractNumber || "без номера";
+  return data.documentTemplate === "invoiceContract"
+    ? `Счет-договор №${number}.docx`
+    : `Договор №${number} с приложением.docx`;
+}
+
+function buildSelectedDocxBlob(data) {
+  return data.documentTemplate === "invoiceContract" ? buildInvoiceContractDocxBlob(data) : buildTemplateDocxBlob(data);
+}
+
 function saveDraft() {
   const data = collectData();
   localStorage.setItem("managerContractDraft", JSON.stringify(data));
@@ -1851,6 +2107,7 @@ function loadDraft() {
     const data = JSON.parse(raw);
     setField("contractNumber", data.contractNumber);
     setField("contractDate", data.contractDate);
+    setField("documentTemplate", data.documentTemplate || "contract");
     setRadioValue("seller", data.seller?.title === SELLERS.ooo.title ? "ooo" : "ip");
     setRadioValue("customerType", data.customerType || "legal");
     setField("customerInn", data.customer?.inn);
@@ -1938,8 +2195,8 @@ document.querySelector("#downloadContractButton").addEventListener("click", asyn
   if (!validateBeforeDownload()) return;
   const data = collectData();
   try {
-    const blob = await buildTemplateDocxBlob(data);
-    downloadDocx(`Договор №${data.contractNumber || "без номера"} с приложением.docx`, blob);
+    const blob = await buildSelectedDocxBlob(data);
+    downloadDocx(contractDownloadName(data), blob);
   } catch (error) {
     console.error(error);
     alert("Не удалось прочитать шаблон договора. Откройте приложение через локальный сервер, а не напрямую из файла.");
