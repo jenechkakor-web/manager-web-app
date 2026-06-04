@@ -1831,11 +1831,31 @@ function updateInvoiceItemsTable(tableXml, data) {
   return tableXml.slice(0, rows[0].start) + replacementRows + tableXml.slice(rows.at(-1).end);
 }
 
+function replaceSignatureCellName(cellXml, name) {
+  const textNodes = [...cellXml.matchAll(/<w:t\b[^>]*>[\s\S]*?<\/w:t>/g)];
+  const target = textNodes.findLast((match) => match[0].replace(/<[^>]+>/g, "").trim());
+  if (!target) return replaceCellText(cellXml, name);
+
+  const content = target[0].match(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/)?.[1] || "";
+  const prefix = content.match(/^([\s_]+)/)?.[1] || " ";
+  const replacement = target[0].replace(/>([\s\S]*?)<\/w:t>$/, `>${prefix}${escapeXml(name)}</w:t>`);
+  return cellXml.slice(0, target.index) + replacement + cellXml.slice(target.index + target[0].length);
+}
+
+function updateInvoiceSignatureRow(rowXml, data) {
+  const names = [sellerShortName(data.seller), customerSignatureName(data)];
+  let cellIndex = -1;
+  return rowXml.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, (cellXml) => {
+    cellIndex += 1;
+    return names[cellIndex] ? replaceSignatureCellName(cellXml, names[cellIndex]) : cellXml;
+  });
+}
+
 function updateInvoiceSignatureTable(tableXml, data) {
-  return replaceTableCellRows(tableXml, [
-    null,
-    [`/ ${sellerShortName(data.seller)} М.П.`, `/ ${customerSignatureName(data)} М.П. / Подпись`],
-  ]);
+  const rows = tableRows(tableXml);
+  if (rows.length < 2) return tableXml;
+  const signatureRow = updateInvoiceSignatureRow(rows[1].xml, data);
+  return tableXml.slice(0, rows[1].start) + signatureRow + tableXml.slice(rows[1].end);
 }
 
 function blankParagraphs(count) {
