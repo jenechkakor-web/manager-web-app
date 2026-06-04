@@ -1651,6 +1651,22 @@ function replaceParagraphRangeWithXml(xml, startPredicate, endPredicate, replace
   return xml.slice(0, paragraphs[start + 1].start) + replacementXml + xml.slice(paragraphs[end].start);
 }
 
+function replaceAfterParagraphUntilNextTableWithXml(xml, startPredicate, replacementXml) {
+  const paragraphs = [...xml.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)].map((match) => ({
+    xml: match[0],
+    start: match.index,
+    end: match.index + match[0].length,
+    text: paragraphText(match[0]),
+  }));
+  const start = paragraphs.findIndex((paragraph) => startPredicate(paragraph.text));
+  if (start < 0) return xml;
+
+  const tableStart = xml.indexOf("<w:tbl", paragraphs[start].end);
+  if (tableStart < 0) return xml;
+
+  return xml.slice(0, paragraphs[start].end) + replacementXml + xml.slice(tableStart);
+}
+
 function removeEmptyParagraphsBeforeAppendix(xml) {
   const paragraphs = [...xml.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)].map((match) => ({
     xml: match[0],
@@ -2053,10 +2069,9 @@ async function buildInvoiceContractDocxBlob(data) {
     (text) => text.startsWith("Приложение №1 К Счет-договору"),
     `Приложение №1 К Счет-договору на поставку товара № ${data.contractNumber} от ${longDate} г.`,
   );
-  documentXml = replaceParagraphRangeWithXml(
+  documentXml = replaceAfterParagraphUntilNextTableWithXml(
     documentXml,
     (text) => text.includes("Описание конструкции:"),
-    (text) => text === "Поставщик:",
     technicalBlockXml(data, imageFiles),
   );
   documentXml = updateTableAt(documentXml, 0, (table) => updateInvoiceBankTable(table, data));
