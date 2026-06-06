@@ -101,6 +101,10 @@ const SELLER_SIGNATURE_SEAL_ASSETS = {
     signature: "assets/ip-signature.png",
     stamp: "assets/ip-stamp.png",
   },
+  ooo: {
+    signature: "assets/ooo-signature.png",
+    stamp: "assets/ooo-stamp.png",
+  },
 };
 
 function money(value) {
@@ -1891,8 +1895,10 @@ function sellerKeyFromData(data) {
 async function loadSellerSignatureSealFiles(data, options = {}) {
   if (!data.addSignatureSeal) return [];
 
-  const config = SELLER_SIGNATURE_SEAL_ASSETS[sellerKeyFromData(data)];
+  const sellerKey = sellerKeyFromData(data);
+  const config = SELLER_SIGNATURE_SEAL_ASSETS[sellerKey];
   if (!config) throw new Error("Подпись и печать для выбранного исполнителя пока не добавлены.");
+  const sellerLabel = sellerKey === "ooo" ? "ООО Веркуп" : "ИП Купоровой";
 
   const relPrefix = options.relPrefix || "rIdSellerSignature";
   const filePrefix = options.filePrefix || "seller-signature";
@@ -1932,7 +1938,7 @@ async function loadSellerSignatureSealFiles(data, options = {}) {
 
   const files = loaded.filter(Boolean);
   if (files.length !== entries.length) {
-    throw new Error("Файлы подписи и печати ИП Купоровой не найдены: assets/ip-signature.png и assets/ip-stamp.png.");
+    throw new Error(`Файлы подписи и печати ${sellerLabel} не найдены: ${config.signature} и ${config.stamp}.`);
   }
   return files;
 }
