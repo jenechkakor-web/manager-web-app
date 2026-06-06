@@ -1950,16 +1950,30 @@ function floatingSignatureImageXml(image, layout, docIndex) {
   return `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251660288" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>${layout.x}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>${layout.y}</wp:posOffset></wp:positionV><wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="${docIndex + 1}" name="${escapeXml(imageName)}"/><wp:cNvGraphicFramePr/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${docIndex + 1}" name="${escapeXml(imageName)}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${image.relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
 }
 
+function fitImageSizeEmu(image, maxWidthInches, maxHeightInches) {
+  const maxWidth = Math.round(maxWidthInches * EMU_PER_INCH);
+  const maxHeight = Math.round(maxHeightInches * EMU_PER_INCH);
+  const ratio = image.width > 0 && image.height > 0 ? image.width / image.height : maxWidth / maxHeight;
+  let cx = maxWidth;
+  let cy = Math.round(cx / ratio);
+  if (cy > maxHeight) {
+    cy = maxHeight;
+    cx = Math.round(cy * ratio);
+  }
+  return { cx, cy };
+}
+
 function sellerSignatureSealRunsXml(signatureSealFiles, occurrence = 0) {
   const signature = signatureSealFiles.find((file) => file.type === "signature");
   const stamp = signatureSealFiles.find((file) => file.type === "stamp");
   if (!signature || !stamp) return "";
 
   const baseIndex = 120 + occurrence * 10;
+  const signatureSize = fitImageSizeEmu(signature, 1.35, 0.4);
   return [
     floatingSignatureImageXml(signature, {
-      cx: Math.round(1.35 * EMU_PER_INCH),
-      cy: Math.round(0.4 * EMU_PER_INCH),
+      cx: signatureSize.cx,
+      cy: signatureSize.cy,
       x: Math.round(0.08 * EMU_PER_INCH),
       y: Math.round(-0.05 * EMU_PER_INCH),
     }, baseIndex),
