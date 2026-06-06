@@ -95,6 +95,13 @@ const IMAGE_MAX_HEIGHT_EMU = Math.round((WORD_PAGE_HEIGHT - WORD_PAGE_MARGIN_Y *
 const WORD_FONT = "Calibri";
 const WORD_FONT_SIZE = 18;
 const WORD_SINGLE_LINE = 240;
+const EMU_PER_INCH = 914400;
+const SELLER_SIGNATURE_SEAL_ASSETS = {
+  ip: {
+    signature: "assets/ip-signature.png",
+    stamp: "assets/ip-stamp.png",
+  },
+};
 
 function money(value) {
   return new Intl.NumberFormat("ru-RU", {
@@ -333,6 +340,15 @@ function readImageDimensions(src) {
     });
     image.addEventListener("error", () => resolve({}));
     image.src = src;
+  });
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(reader.result));
+    reader.addEventListener("error", () => resolve(""));
+    reader.readAsDataURL(blob);
   });
 }
 
@@ -759,6 +775,7 @@ function collectData() {
     contractNumber: getField("contractNumber").value.trim(),
     contractDate: getField("contractDate").value,
     documentTemplate: getField("documentTemplate").value,
+    sellerKey: getField("seller").value,
     seller,
     customerType,
     customer:
@@ -781,6 +798,7 @@ function collectData() {
     paymentTerms: getField("paymentTerms").value,
     finalPaymentTiming: getField("finalPaymentTiming").value,
     warranty: getField("warranty").value.trim(),
+    addSignatureSeal: getField("addSignatureSeal").value === "yes",
     workDays: getField("workDays").value.trim(),
     workAddress: getField("workAddress").value.trim(),
     technicalBlocks,
@@ -1851,6 +1869,116 @@ function tableRows(tableXml) {
   }));
 }
 
+function updateTableCellAt(tableXml, rowIndex, cellIndex, updater) {
+  const rows = tableRows(tableXml);
+  const row = rows[rowIndex];
+  if (!row) return tableXml;
+
+  let currentCell = -1;
+  const rowXml = row.xml.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, (cellXml) => {
+    currentCell += 1;
+    return currentCell === cellIndex ? updater(cellXml) : cellXml;
+  });
+
+  return tableXml.slice(0, row.start) + rowXml + tableXml.slice(row.end);
+}
+
+function sellerKeyFromData(data) {
+  if (data.sellerKey) return data.sellerKey;
+  return data.seller?.title === SELLERS.ooo.title ? "ooo" : "ip";
+}
+
+async function loadSellerSignatureSealFiles(data, options = {}) {
+  if (!data.addSignatureSeal) return [];
+
+  const config = SELLER_SIGNATURE_SEAL_ASSETS[sellerKeyFromData(data)];
+  if (!config) throw new Error("Подпись и печать для выбранного исполнителя пока не добавлены.");
+
+  const relPrefix = options.relPrefix || "rIdSellerSignature";
+  const filePrefix = options.filePrefix || "seller-signature";
+  const idOffset = options.idOffset || 100;
+  const entries = [
+    { key: "signature", path: config.signature, name: "Подпись исполнителя" },
+    { key: "stamp", path: config.stamp, name: "Печать исполнителя" },
+  ];
+  const loaded = await Promise.all(
+    entries.map(async (entry, index) => {
+      try {
+        const response = await fetch(entry.path, { cache: "no-store" });
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        const src = await blobToDataUrl(blob);
+        const dimensions = await readImageDimensions(src);
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const mime = blob.type || "image/png";
+        const ext = imageExtension(mime);
+        return {
+          type: entry.key,
+          name: entry.name,
+          relId: `${relPrefix}${index + 1}`,
+          path: `word/media/${filePrefix}-${entry.key}.${ext}`,
+          target: `media/${filePrefix}-${entry.key}.${ext}`,
+          mime,
+          bytes,
+          width: dimensions.width || 1,
+          height: dimensions.height || 1,
+          documentIndex: idOffset + index,
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  const files = loaded.filter(Boolean);
+  if (files.length !== entries.length) {
+    throw new Error("Файлы подписи и печати ИП Купоровой не найдены: assets/ip-signature.png и assets/ip-stamp.png.");
+  }
+  return files;
+}
+
+function floatingSignatureImageXml(image, layout, docIndex) {
+  const imageName = image.name || "seller-signature";
+  const cx = layout.cx;
+  const cy = layout.cy;
+  return `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251660288" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>${layout.x}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>${layout.y}</wp:posOffset></wp:positionV><wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="${docIndex + 1}" name="${escapeXml(imageName)}"/><wp:cNvGraphicFramePr/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${docIndex + 1}" name="${escapeXml(imageName)}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${image.relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
+}
+
+function sellerSignatureSealRunsXml(signatureSealFiles, occurrence = 0) {
+  const signature = signatureSealFiles.find((file) => file.type === "signature");
+  const stamp = signatureSealFiles.find((file) => file.type === "stamp");
+  if (!signature || !stamp) return "";
+
+  const baseIndex = 120 + occurrence * 10;
+  return [
+    floatingSignatureImageXml(signature, {
+      cx: Math.round(1.35 * EMU_PER_INCH),
+      cy: Math.round(0.4 * EMU_PER_INCH),
+      x: Math.round(0.08 * EMU_PER_INCH),
+      y: Math.round(-0.05 * EMU_PER_INCH),
+    }, baseIndex),
+    floatingSignatureImageXml(stamp, {
+      cx: Math.round(1.25 * EMU_PER_INCH),
+      cy: Math.round(1.25 * EMU_PER_INCH),
+      x: Math.round(0.72 * EMU_PER_INCH),
+      y: Math.round(-0.34 * EMU_PER_INCH),
+    }, baseIndex + 1),
+  ].join("");
+}
+
+function addSellerSignatureSealToCell(cellXml, signatureSealFiles, occurrence = 0) {
+  const runs = sellerSignatureSealRunsXml(signatureSealFiles, occurrence);
+  if (!runs) return cellXml;
+  return cellXml.replace(/(<w:p\b[^>]*>(?:<w:pPr[\s\S]*?<\/w:pPr>)?)/, `$1${runs}`);
+}
+
+function addSellerSignatureSealToTable(tableXml, rowIndex, cellIndex, signatureSealFiles, occurrence = 0) {
+  if (!signatureSealFiles.length) return tableXml;
+  return updateTableCellAt(tableXml, rowIndex, cellIndex, (cellXml) =>
+    addSellerSignatureSealToCell(cellXml, signatureSealFiles, occurrence),
+  );
+}
+
 function normalizeCellText(cell) {
   if (cell && typeof cell === "object" && !Array.isArray(cell)) return cell;
   return { text: cell };
@@ -1887,9 +2015,9 @@ function replaceTableCellRows(tableXml, rowValues) {
   });
 }
 
-function updatePartiesTable(tableXml, data) {
+function updatePartiesTable(tableXml, data, signatureSealFiles = []) {
   const customerSign = customerSignatureName(data);
-  return replaceTableCellRows(tableXml, [
+  const updatedTable = replaceTableCellRows(tableXml, [
     null,
     [
       { text: contractorDetails(data) },
@@ -1900,6 +2028,7 @@ function updatePartiesTable(tableXml, data) {
       { text: `_____________/ ${customerSign}/\nм.п.` },
     ],
   ]);
+  return addSellerSignatureSealToTable(updatedTable, 2, 0, signatureSealFiles, 0);
 }
 
 function updateSpecTable(tableXml, data) {
@@ -1929,14 +2058,15 @@ function updateSpecTable(tableXml, data) {
   return tableXml.slice(0, rows[0].start) + replacementRows + tableXml.slice(rows.at(-1).end);
 }
 
-function updateSignaturesTable(tableXml, data) {
+function updateSignaturesTable(tableXml, data, signatureSealFiles = []) {
   const customerSign = customerSignatureName(data);
-  return replaceTableCellRows(tableXml, [
+  const updatedTable = replaceTableCellRows(tableXml, [
     [
       { text: `_____________/ ${sellerShortName(data.seller)}/\nм.п.` },
       { text: `_____________/ ${customerSign}/\nм.п.` },
     ],
   ]);
+  return addSellerSignatureSealToTable(updatedTable, 0, 0, signatureSealFiles, 1);
 }
 
 function updateInvoiceBankTable(tableXml, data) {
@@ -1992,11 +2122,12 @@ function updateInvoiceSignatureRow(rowXml, data) {
   });
 }
 
-function updateInvoiceSignatureTable(tableXml, data) {
+function updateInvoiceSignatureTable(tableXml, data, signatureSealFiles = [], occurrence = 0) {
   const rows = tableRows(tableXml);
   if (rows.length < 2) return tableXml;
   const signatureRow = updateInvoiceSignatureRow(rows[1].xml, data);
-  return tableXml.slice(0, rows[1].start) + signatureRow + tableXml.slice(rows[1].end);
+  const updatedTable = tableXml.slice(0, rows[1].start) + signatureRow + tableXml.slice(rows[1].end);
+  return addSellerSignatureSealToTable(updatedTable, 1, 0, signatureSealFiles, occurrence);
 }
 
 function blankParagraphs(count) {
@@ -2128,6 +2259,11 @@ async function buildTemplateDocxBlob(data) {
     filePrefix: "generated-mockup",
     idOffset: 20,
   });
+  const signatureSealFiles = await loadSellerSignatureSealFiles(data, {
+    relPrefix: "rIdContractSignature",
+    filePrefix: "contract-signature-seal",
+    idOffset: 100,
+  });
 
   let documentXml = fileText(files, "word/document.xml");
   const contractDate = formatDate(data.contractDate);
@@ -2164,13 +2300,13 @@ async function buildTemplateDocxBlob(data) {
     technicalBlockXml(data, imageFiles),
   );
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("Срок производства") || text.includes("Срок производства (монтажа)"), `1.1.5. Срок производства (монтажа) – до ${data.workDays} рабочих дней, ${paymentPhrase(data.paymentTerms)}.`);
-  documentXml = updateTableAt(documentXml, 0, (table) => updatePartiesTable(table, data));
+  documentXml = updateTableAt(documentXml, 0, (table) => updatePartiesTable(table, data, signatureSealFiles));
   documentXml = updateTableAt(documentXml, 1, (table) => updateSpecTable(table, data));
-  documentXml = updateTableAt(documentXml, 2, (table) => updateSignaturesTable(table, data));
+  documentXml = updateTableAt(documentXml, 2, (table) => updateSignaturesTable(table, data, signatureSealFiles));
 
   let relsXml = fileText(files, "word/_rels/document.xml.rels");
   let contentTypesXml = fileText(files, "[Content_Types].xml");
-  imageFiles.forEach((image) => {
+  [...imageFiles, ...signatureSealFiles].forEach((image) => {
     relsXml = addRelationshipXml(relsXml, image.relId, image.target);
     contentTypesXml = ensureImageContentType(contentTypesXml, image.mime);
     replaceFile(files, image.path, image.bytes);
@@ -2190,6 +2326,11 @@ async function buildInvoiceContractDocxBlob(data) {
     relPrefix: "rIdInvoiceMockup",
     filePrefix: "invoice-mockup",
     idOffset: 40,
+  });
+  const signatureSealFiles = await loadSellerSignatureSealFiles(data, {
+    relPrefix: "rIdInvoiceSignature",
+    filePrefix: "invoice-signature-seal",
+    idOffset: 140,
   });
 
   const longDate = longDateText(data.contractDate);
@@ -2237,12 +2378,12 @@ async function buildInvoiceContractDocxBlob(data) {
   );
   documentXml = updateTableAt(documentXml, 0, (table) => updateInvoiceBankTable(table, data));
   documentXml = updateTableAt(documentXml, 1, (table) => updateInvoiceItemsTable(table, data));
-  documentXml = updateTableAt(documentXml, 2, (table) => updateInvoiceSignatureTable(table, data));
-  documentXml = updateTableAt(documentXml, 3, (table) => updateInvoiceSignatureTable(table, data));
+  documentXml = updateTableAt(documentXml, 2, (table) => updateInvoiceSignatureTable(table, data, signatureSealFiles, 0));
+  documentXml = updateTableAt(documentXml, 3, (table) => updateInvoiceSignatureTable(table, data, signatureSealFiles, 1));
 
   let relsXml = fileText(files, "word/_rels/document.xml.rels");
   let contentTypesXml = fileText(files, "[Content_Types].xml");
-  imageFiles.forEach((image) => {
+  [...imageFiles, ...signatureSealFiles].forEach((image) => {
     relsXml = addRelationshipXml(relsXml, image.relId, image.target);
     contentTypesXml = ensureImageContentType(contentTypesXml, image.mime);
     replaceFile(files, image.path, image.bytes);
@@ -2298,6 +2439,7 @@ function loadDraft() {
     setField("paymentTerms", normalizePaymentValue(data.paymentTerms));
     setField("finalPaymentTiming", data.finalPaymentTiming || "beforeShipment");
     setField("warranty", data.warranty);
+    setField("addSignatureSeal", data.addSignatureSeal ? "yes" : "no");
     setField("workDays", data.workDays || "10");
     setField("workAddress", data.workAddress);
     techDescriptions.innerHTML = "";
@@ -2375,7 +2517,12 @@ document.querySelector("#downloadContractButton").addEventListener("click", asyn
     downloadDocx(contractDownloadName(data), blob);
   } catch (error) {
     console.error(error);
-    alert("Не удалось прочитать шаблон договора. Откройте приложение через локальный сервер, а не напрямую из файла.");
+    const message = error?.message || "";
+    alert(
+      message.includes("подпись") || message.includes("печать")
+        ? message
+        : "Не удалось прочитать шаблон договора. Откройте приложение через локальный сервер, а не напрямую из файла.",
+    );
   }
 });
 document.querySelector("#addTechDescriptionButton").addEventListener("click", () => addTechDescription());
