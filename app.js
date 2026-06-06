@@ -2233,7 +2233,7 @@ async function buildInvoiceContractDocxBlob(data) {
   documentXml = replaceAfterParagraphUntilNextTableWithXml(
     documentXml,
     (text) => text.includes("Описание конструкции:"),
-    technicalBlockXml(data, imageFiles),
+    `${technicalBlockXml(data, imageFiles)}${blankParagraphs(3)}`,
   );
   documentXml = updateTableAt(documentXml, 0, (table) => updateInvoiceBankTable(table, data));
   documentXml = updateTableAt(documentXml, 1, (table) => updateInvoiceItemsTable(table, data));
