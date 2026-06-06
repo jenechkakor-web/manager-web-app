@@ -30,10 +30,17 @@ function sendJson(res, status, payload) {
 function normalizePresets(source) {
   return (Array.isArray(source) ? source : [])
     .map((entry) => ({
+      group: String(entry.group || entry.category || "Общее").trim(),
+      subgroup: String(entry.subgroup || entry.subcategory || "Без подгруппы").trim(),
       title: String(entry.title || "").trim(),
       description: String(entry.description || "").trim(),
     }))
-    .filter((entry) => entry.title && entry.description);
+    .filter((entry) => entry.title && entry.description)
+    .map((entry) => ({
+      ...entry,
+      group: entry.group || "Общее",
+      subgroup: entry.subgroup || "Без подгруппы",
+    }));
 }
 
 async function readJsonBody(req) {

@@ -41,16 +41,22 @@ const SELLERS = {
 
 const DEFAULT_TECH_PRESETS = [
   {
+    group: "Вывески",
+    subgroup: "Световые",
     title: "Световая вывеска с объемными буквами",
     description:
       "Световая вывеска с объемными буквами, лицевой поверхностью из акрила, бортами из ПВХ/алюминия, внутренней LED-подсветкой и креплением на подготовленное основание.",
   },
   {
+    group: "Вывески",
+    subgroup: "Несветовые",
     title: "Несветовая вывеска на композитной основе",
     description:
       "Несветовая вывеска на композитной основе с нанесением пленки/печати, подготовкой крепежных элементов и монтажом на согласованной поверхности.",
   },
   {
+    group: "Таблички",
+    subgroup: "Навигация",
     title: "Интерьерная навигационная табличка",
     description:
       "Интерьерная навигационная табличка с печатью/аппликацией, защитным покрытием и креплением согласно согласованному макету.",
@@ -156,10 +162,17 @@ function normalizeTechPresets(source) {
 
   return entries
     .map((entry) => ({
+      group: String(entry.group || entry.category || "Общее").trim(),
+      subgroup: String(entry.subgroup || entry.subcategory || "Без подгруппы").trim(),
       title: String(entry.title || "").trim(),
       description: String(entry.description || "").trim(),
     }))
-    .filter((entry) => entry.title && entry.description);
+    .filter((entry) => entry.title && entry.description)
+    .map((entry) => ({
+      ...entry,
+      group: entry.group || "Общее",
+      subgroup: entry.subgroup || "Без подгруппы",
+    }));
 }
 
 function cacheBusted(url) {
@@ -192,15 +205,34 @@ function techPresetText(title) {
   return techPresets.find((preset) => preset.title === title)?.description || "";
 }
 
+function groupedTechPresets() {
+  return techPresets.reduce((groups, preset) => {
+    const group = preset.group || "Общее";
+    const subgroup = preset.subgroup || "Без подгруппы";
+    const key = `${group}|||${subgroup}`;
+    if (!groups.has(key)) groups.set(key, { group, subgroup, presets: [] });
+    groups.get(key).presets.push(preset);
+    return groups;
+  }, new Map());
+}
+
 function techPresetOptions(selected = "") {
   const hasSelected = techPresets.some((preset) => preset.title === selected);
   const missingSelected =
     selected && !hasSelected ? `<option value="${escapeHtml(selected)}">${escapeHtml(selected)}</option>` : "";
-  const options = techPresets
-    .map((preset) => `<option value="${escapeHtml(preset.title)}">${escapeHtml(preset.title)}</option>`)
+  const options = [...groupedTechPresets().values()]
+    .map(
+      ({ group, subgroup, presets }) => `
+        <optgroup label="${escapeHtml(`${group} / ${subgroup}`)}">
+          ${presets
+            .map((preset) => `<option value="${escapeHtml(preset.title)}">${escapeHtml(preset.title)}</option>`)
+            .join("")}
+        </optgroup>
+      `,
+    )
     .join("");
 
-  return `<option value="">Выбрать из библиотеки</option>${missingSelected}${options}`;
+  return `<option value="">Своё описание</option>${missingSelected}${options}`;
 }
 
 function refreshTechPresetSelects() {
@@ -476,9 +508,7 @@ function showTechLibraryEditor(showEditor) {
 }
 
 function openTechLibraryModal() {
-  techLibraryModal.classList.remove("hidden");
-  showTechLibraryEditor(Boolean(techLibraryToken));
-  if (!techLibraryToken) techLibraryLoginInput.focus();
+  window.open("library.html?v=20260606-groups-1", "techLibrary");
 }
 
 function closeTechLibraryModal() {

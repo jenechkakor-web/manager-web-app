@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Справочник тех. описаний</title>
+    <link rel="stylesheet" href="styles.css?v=20260606-groups-1" />
+  </head>
+  <body>
+    <main class="app-shell library-page">
+      <section class="workspace library-workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Справочник</p>
+            <h1>Технические описания</h1>
+          </div>
+          <div class="row-actions">
+            <button class="button ghost" id="reloadLibraryButton" type="button">Обновить</button>
+            <button class="button primary hidden" id="saveLibraryButton" type="button">Сохранить</button>
+          </div>
+        </header>
+
+        <section class="form-area library-content">
+          <section class="panel" id="libraryLoginPanel">
+            <div class="panel-title">
+              <h2>Вход администратора</h2>
+            </div>
+            <div class="grid two">
+              <label>
+                <span>Логин</span>
+                <input id="libraryLoginInput" autocomplete="username" />
+              </label>
+              <label>
+                <span>Пароль</span>
+                <input id="libraryPasswordInput" type="password" autocomplete="current-password" />
+              </label>
+            </div>
+            <div class="modal-actions">
+              <button class="button primary" id="libraryLoginButton" type="button">Войти</button>
+            </div>
+          </section>
+
+          <section class="panel hidden" id="libraryEditorPanel">
+            <div class="library-toolbar">
+              <label>
+                <span>GitHub token для сохранения</span>
+                <input id="libraryGitHubTokenInput" type="password" autocomplete="off" />
+              </label>
+              <label>
+                <span>Фильтр по группе</span>
+                <select id="libraryGroupFilter"></select>
+              </label>
+              <button class="button ghost" id="addLibraryPresetButton" type="button">Добавить шаблон</button>
+            </div>
+            <p class="status-line" id="libraryStatus"></p>
+            <datalist id="libraryGroupList"></datalist>
+            <datalist id="librarySubgroupList"></datalist>
+            <div class="library-list" id="libraryPresetList"></div>
+          </section>
+        </section>
+      </section>
+    </main>
+    <script src="library.js?v=20260606-groups-1"></script>
+  </body>
+</html>

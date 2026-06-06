@@ -594,6 +594,33 @@ fieldset {
   gap: 12px;
 }
 
+.library-page {
+  min-height: 100vh;
+}
+
+.library-workspace {
+  grid-template-columns: 1fr;
+}
+
+.library-content {
+  padding-top: 0;
+}
+
+.library-toolbar,
+.library-group-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.status-line {
+  min-height: 18px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .library-editor {
   display: grid;
   gap: 12px;
@@ -682,6 +709,11 @@ fieldset {
   }
 
   .library-row-header {
+    grid-template-columns: 1fr;
+  }
+
+  .library-toolbar,
+  .library-group-grid {
     grid-template-columns: 1fr;
   }
 }
