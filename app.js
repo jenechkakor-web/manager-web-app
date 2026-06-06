@@ -2426,57 +2426,80 @@ function buildSelectedDocxBlob(data) {
   return data.documentTemplate === "invoiceContract" ? buildInvoiceContractDocxBlob(data) : buildTemplateDocxBlob(data);
 }
 
-function saveDraft() {
+async function saveContractRegistryEntry(data, status) {
+  if (!window.ContractRegistry || !data.contractNumber) return { skipped: true };
+  const record = window.ContractRegistry.recordFromContractData(data, status);
+  if (!record) return { skipped: true };
+  return window.ContractRegistry.upsertRecord(record, {
+    token: window.ContractRegistry.registryToken(),
+  });
+}
+
+async function saveDraft() {
   const data = collectData();
   localStorage.setItem("managerContractDraft", JSON.stringify(data));
   localStorage.setItem("dadataToken", getField("dadataToken").value);
-  alert("Черновик сохранен.");
+  try {
+    await saveContractRegistryEntry(data, "draft");
+    alert(data.contractNumber ? "Черновик сохранен и добавлен в реестр." : "Черновик сохранен. Для записи в реестр нужен номер договора.");
+  } catch {
+    alert("Черновик сохранен локально, но реестр не обновился.");
+  }
+}
+
+function loadDraftData(data) {
+  setField("contractNumber", data.contractNumber);
+  setField("contractDate", data.contractDate);
+  setField("documentTemplate", data.documentTemplate || "invoiceContract");
+  setRadioValue("seller", data.sellerKey || (data.seller?.title === SELLERS.ooo.title ? "ooo" : "ip"));
+  setRadioValue("customerType", data.customerType || "legal");
+  setField("customerInn", data.customer?.inn);
+  setField("customerKpp", data.customer?.kpp);
+  setField("customerName", data.customer?.name);
+  setField("customerAddress", data.customer?.address);
+  setField("customerOgrn", data.customer?.ogrn);
+  setField("customerDirector", data.customer?.director);
+  setField("personName", data.customerType === "person" ? data.customer?.name : "");
+  setField("passport", data.customer?.passport);
+  setField("personAddress", data.customerType === "person" ? data.customer?.address : "");
+  setField("paymentTerms", normalizePaymentValue(data.paymentTerms));
+  setField("finalPaymentTiming", data.finalPaymentTiming || "beforeShipment");
+  setField("warranty", data.warranty);
+  setField("addSignatureSeal", data.addSignatureSeal ? "yes" : "no");
+  setField("workDays", data.workDays || "10");
+  setField("workAddress", data.workAddress);
+  techDescriptions.innerHTML = "";
+  const blocks = data.technicalBlocks?.length
+    ? data.technicalBlocks
+    : (data.technicalDescriptions?.length ? data.technicalDescriptions : [data.technicalDescription || ""]).map((description, index) => ({
+        description,
+        mockups: index === 0 ? data.mockups || [] : [],
+      }));
+  blocks.forEach((block) => addTechDescription(block));
+  getField("requestLibraryAdd").checked = Boolean(data.requestLibraryAdd);
+
+  itemsBody.innerHTML = "";
+  (data.items || []).forEach(addItem);
+  toggleCustomerFields();
+  toggleFinalPaymentTiming();
+  recalculate();
 }
 
 function loadDraft() {
   const token = localStorage.getItem("dadataToken");
   if (token) setField("dadataToken", token);
 
+  const registryData = window.ContractRegistry?.getContractToOpen();
+  if (registryData) {
+    loadDraftData(registryData);
+    return;
+  }
+
   const raw = localStorage.getItem("managerContractDraft");
   if (!raw) return;
 
   try {
-    const data = JSON.parse(raw);
-    setField("contractNumber", data.contractNumber);
-    setField("contractDate", data.contractDate);
-    setField("documentTemplate", data.documentTemplate || "invoiceContract");
-    setRadioValue("seller", data.seller?.title === SELLERS.ooo.title ? "ooo" : "ip");
-    setRadioValue("customerType", data.customerType || "legal");
-    setField("customerInn", data.customer?.inn);
-    setField("customerKpp", data.customer?.kpp);
-    setField("customerName", data.customer?.name);
-    setField("customerAddress", data.customer?.address);
-    setField("customerOgrn", data.customer?.ogrn);
-    setField("customerDirector", data.customer?.director);
-    setField("personName", data.customerType === "person" ? data.customer?.name : "");
-    setField("passport", data.customer?.passport);
-    setField("personAddress", data.customerType === "person" ? data.customer?.address : "");
-    setField("paymentTerms", normalizePaymentValue(data.paymentTerms));
-    setField("finalPaymentTiming", data.finalPaymentTiming || "beforeShipment");
-    setField("warranty", data.warranty);
-    setField("addSignatureSeal", data.addSignatureSeal ? "yes" : "no");
-    setField("workDays", data.workDays || "10");
-    setField("workAddress", data.workAddress);
-    techDescriptions.innerHTML = "";
-    const blocks = data.technicalBlocks?.length
-      ? data.technicalBlocks
-      : (data.technicalDescriptions?.length ? data.technicalDescriptions : [data.technicalDescription || ""]).map((description, index) => ({
-          description,
-          mockups: index === 0 ? data.mockups || [] : [],
-        }));
-    blocks.forEach((block) => addTechDescription(block));
-    getField("requestLibraryAdd").checked = Boolean(data.requestLibraryAdd);
-
-    itemsBody.innerHTML = "";
-    (data.items || []).forEach(addItem);
-    toggleCustomerFields();
-    toggleFinalPaymentTiming();
-    recalculate();
+    loadDraftData(JSON.parse(raw));
   } catch {
     localStorage.removeItem("managerContractDraft");
   }
@@ -2527,7 +2550,7 @@ async function lookupInn() {
 }
 
 document.querySelector("#addItemButton").addEventListener("click", () => addItem());
-document.querySelector("#saveDraftButton").addEventListener("click", saveDraft);
+document.querySelector("#saveDraftButton").addEventListener("click", () => saveDraft());
 document.querySelector("#lookupInnButton").addEventListener("click", lookupInn);
 document.querySelector("#downloadContractButton").addEventListener("click", async () => {
   if (!validateBeforeDownload()) return;
@@ -2543,6 +2566,13 @@ document.querySelector("#downloadContractButton").addEventListener("click", asyn
         ? message
         : "Не удалось прочитать шаблон договора. Откройте приложение через локальный сервер, а не напрямую из файла.",
     );
+    return;
+  }
+
+  try {
+    await saveContractRegistryEntry(data, "exported");
+  } catch {
+    alert("Договор выгружен, но реестр не обновился.");
   }
 });
 document.querySelector("#addTechDescriptionButton").addEventListener("click", () => addTechDescription());

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Договоры менеджера</title>
-    <link rel="stylesheet" href="styles.css?v=20260606-groups-4" />
+    <link rel="stylesheet" href="styles.css?v=20260606-registry-1" />
   </head>
   <body>
     <main class="app-shell">
@@ -18,9 +18,9 @@
             </div>
           </div>
           <nav class="nav-list">
-            <button class="nav-item active" type="button">Договор подряда</button>
-            <button class="nav-item" type="button" disabled>Счета</button>
-            <button class="nav-item" type="button" disabled>Библиотека</button>
+            <button class="nav-item active" type="button">Создать Договор и Счет.</button>
+            <a class="nav-item" href="registry.html?v=20260606-registry-1" target="_blank" rel="noopener">Реестр договоров</a>
+            <a class="nav-item" href="library.html?v=20260606-groups-4" target="_blank" rel="noopener">Справочник</a>
           </nav>
         </aside>
 
@@ -219,7 +219,6 @@
               <div class="panel-title row-title">
                 <h2>Техническое описание</h2>
                 <div class="row-actions">
-                  <a class="button ghost" href="library.html?v=20260606-groups-4" target="_blank" rel="noopener">Справочник</a>
                   <button class="button ghost" id="addTechDescriptionButton" type="button">Добавить описание</button>
                 </div>
               </div>
@@ -234,6 +233,7 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260606-signature-seal-3"></script>
+    <script src="registry-storage.js?v=20260606-registry-1"></script>
+    <script src="app.js?v=20260606-registry-1"></script>
   </body>
 </html>

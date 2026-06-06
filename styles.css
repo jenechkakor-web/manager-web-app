@@ -42,7 +42,7 @@ button {
 
 .workspace {
   display: grid;
-  grid-template-columns: 236px minmax(0, 1fr);
+  grid-template-columns: 306px minmax(0, 1fr);
   min-height: calc(100vh - 40px);
   border: 1px solid var(--line);
   background: var(--surface);
@@ -89,6 +89,7 @@ button {
 }
 
 .nav-item {
+  display: block;
   width: 100%;
   padding: 11px 12px;
   border: 0;
@@ -96,6 +97,8 @@ button {
   color: var(--muted);
   background: transparent;
   text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .nav-item.active {
@@ -669,6 +672,90 @@ fieldset {
   align-items: end;
 }
 
+.registry-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.registry-admin {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.registry-admin-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.registry-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.registry-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+}
+
+.registry-table th,
+.registry-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.registry-table th {
+  color: var(--muted);
+  background: #f8faf9;
+  font-size: 13px;
+}
+
+.registry-table tbody tr {
+  cursor: pointer;
+}
+
+.registry-table tbody tr:hover {
+  background: #f8faf9;
+}
+
+.registry-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status-badge.draft {
+  color: #71520b;
+  background: #fff4d8;
+}
+
+.status-badge.exported {
+  color: #075c4e;
+  background: #dcf3ee;
+}
+
+.registry-empty {
+  padding: 28px 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
 @media (max-width: 1020px) {
   .workspace {
     grid-template-columns: 1fr;
@@ -681,6 +768,7 @@ fieldset {
 
   .nav-list {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow-x: auto;
   }
 
   .topbar {
@@ -737,6 +825,8 @@ fieldset {
 
   .library-toolbar,
   .library-group-grid,
+  .registry-toolbar,
+  .registry-admin-row,
   .tech-card-header {
     grid-template-columns: 1fr;
   }

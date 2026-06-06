@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Реестр договоров</title>
+    <link rel="stylesheet" href="styles.css?v=20260606-registry-1" />
+  </head>
+  <body>
+    <main class="app-shell library-page">
+      <section class="workspace library-workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Реестр</p>
+            <h1>Договоры</h1>
+          </div>
+          <div class="row-actions">
+            <button class="button ghost" id="reloadRegistryButton" type="button">Обновить</button>
+          </div>
+        </header>
+
+        <section class="form-area library-content">
+          <section class="panel">
+            <div class="registry-toolbar">
+              <label>
+                <span>Поиск по номеру</span>
+                <input id="registrySearchInput" placeholder="Введите номер договора" />
+              </label>
+              <button class="button ghost" id="adminToggleButton" type="button">Вход администратора</button>
+            </div>
+
+            <div class="registry-admin hidden" id="registryLoginPanel">
+              <div class="registry-admin-row">
+                <label>
+                  <span>Логин</span>
+                  <input id="registryLoginInput" autocomplete="username" />
+                </label>
+                <label>
+                  <span>Пароль</span>
+                  <input id="registryPasswordInput" type="password" autocomplete="current-password" />
+                </label>
+                <button class="button primary" id="registryLoginButton" type="button">Войти</button>
+              </div>
+            </div>
+
+            <div class="registry-admin hidden" id="registryAdminPanel">
+              <div class="registry-admin-row">
+                <label>
+                  <span>GitHub token для сохранения общего реестра</span>
+                  <input id="registryGitHubTokenInput" type="password" autocomplete="off" />
+                </label>
+                <button class="button ghost" id="saveRegistryTokenButton" type="button">Сохранить token</button>
+                <button class="button ghost" id="registryLogoutButton" type="button">Выйти</button>
+              </div>
+            </div>
+
+            <p class="status-line" id="registryStatus"></p>
+
+            <div class="registry-table-wrap">
+              <table class="registry-table">
+                <thead>
+                  <tr>
+                    <th>Номер</th>
+                    <th>Дата</th>
+                    <th>Контрагент</th>
+                    <th>Сумма</th>
+                    <th>Статус</th>
+                    <th class="admin-only hidden">Удаление</th>
+                  </tr>
+                </thead>
+                <tbody id="registryTableBody"></tbody>
+              </table>
+              <div class="registry-empty hidden" id="registryEmpty">В реестре пока нет договоров.</div>
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <script src="registry-storage.js?v=20260606-registry-1"></script>
+    <script src="registry.js?v=20260606-registry-1"></script>
+  </body>
+</html>

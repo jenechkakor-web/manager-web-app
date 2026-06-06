@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const rootDir = __dirname;
 const presetsPath = path.join(rootDir, "templates", "tech-presets.json");
+const registryPath = path.join(rootDir, "templates", "contracts-registry.json");
 const port = Number(process.env.PORT || 4173);
 const adminLogin = process.env.ADMIN_LOGIN || "admin";
 const adminPassword = process.env.ADMIN_PASSWORD || "admin2026";
@@ -43,6 +44,25 @@ function normalizePresets(source) {
     }));
 }
 
+function normalizeRegistryRecords(source) {
+  return (Array.isArray(source) ? source : [])
+    .map((entry) => {
+      const data = entry.data && typeof entry.data === "object" ? entry.data : {};
+      const number = String(entry.number || entry.contractNumber || data.contractNumber || "").trim();
+      const amount = Number(entry.amount ?? data.totals?.grandTotal ?? 0);
+      return {
+        number,
+        date: String(entry.date || data.contractDate || ""),
+        counterparty: String(entry.counterparty || data.customer?.name || data.customer?.inn || ""),
+        amount: Number.isFinite(amount) ? amount : 0,
+        status: entry.status === "exported" ? "exported" : "draft",
+        updatedAt: String(entry.updatedAt || new Date().toISOString()),
+        data,
+      };
+    })
+    .filter((entry) => entry.number);
+}
+
 async function readJsonBody(req) {
   const chunks = [];
   let size = 0;
@@ -61,9 +81,19 @@ async function readPresets() {
   return normalizePresets(JSON.parse(raw));
 }
 
+async function readRegistry() {
+  const raw = await fs.readFile(registryPath, "utf8");
+  return normalizeRegistryRecords(JSON.parse(raw));
+}
+
 async function writePresets(presets) {
   await fs.mkdir(path.dirname(presetsPath), { recursive: true });
   await fs.writeFile(presetsPath, `${JSON.stringify(presets, null, 2)}\n`, "utf8");
+}
+
+async function writeRegistry(records) {
+  await fs.mkdir(path.dirname(registryPath), { recursive: true });
+  await fs.writeFile(registryPath, `${JSON.stringify(normalizeRegistryRecords(records), null, 2)}\n`, "utf8");
 }
 
 function hasAdminAccess(req) {
@@ -74,6 +104,11 @@ function hasAdminAccess(req) {
 async function handleApi(req, res, pathname) {
   if (req.method === "GET" && pathname === "/api/tech-presets") {
     sendJson(res, 200, await readPresets());
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/contracts-registry") {
+    sendJson(res, 200, await readRegistry());
     return;
   }
 
@@ -110,6 +145,18 @@ async function handleApi(req, res, pathname) {
 
     await writePresets(presets);
     sendJson(res, 200, presets);
+    return;
+  }
+
+  if (req.method === "PUT" && pathname === "/api/contracts-registry") {
+    if (!hasAdminAccess(req)) {
+      sendJson(res, 401, { error: "Unauthorized" });
+      return;
+    }
+
+    const records = normalizeRegistryRecords(await readJsonBody(req));
+    await writeRegistry(records);
+    sendJson(res, 200, records);
     return;
   }
 
