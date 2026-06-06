@@ -17,8 +17,7 @@ const saveButton = document.querySelector("#saveLibraryButton");
 const addButton = document.querySelector("#addLibraryPresetButton");
 const tokenInput = document.querySelector("#libraryGitHubTokenInput");
 const groupFilter = document.querySelector("#libraryGroupFilter");
-const groupList = document.querySelector("#libraryGroupList");
-const subgroupList = document.querySelector("#librarySubgroupList");
+const subgroupFilter = document.querySelector("#librarySubgroupFilter");
 const presetList = document.querySelector("#libraryPresetList");
 const statusLine = document.querySelector("#libraryStatus");
 
@@ -60,9 +59,8 @@ function isLocalAppServer() {
 }
 
 function presetEndpoints() {
-  const endpoints = [cacheBusted(GITHUB_RAW_PRESETS_URL)];
-  if (isLocalAppServer()) endpoints.push(cacheBusted("/api/tech-presets"));
-  endpoints.push(cacheBusted("templates/tech-presets.json"));
+  const endpoints = [cacheBusted("templates/tech-presets.json"), cacheBusted(GITHUB_RAW_PRESETS_URL)];
+  if (isLocalAppServer()) endpoints.unshift(cacheBusted("/api/tech-presets"));
   return endpoints;
 }
 
@@ -82,31 +80,49 @@ function setStatus(message) {
 
 async function loadPresets() {
   setStatus("Загружаю справочник...");
+  let bestPresets = [];
+  let bestScore = 0;
   for (const endpoint of presetEndpoints()) {
     try {
       const response = await fetch(endpoint, { cache: "no-store" });
       if (!response.ok) continue;
       const loaded = normalizePresets(await response.json());
-      if (loaded.length) {
-        presets = loaded;
-        render();
-        setStatus(`Загружено шаблонов: ${presets.length}`);
-        return;
+      const score = presetSourceScore(loaded);
+      if (score >= bestScore) {
+        bestPresets = loaded;
+        bestScore = score;
       }
     } catch {
       // Try the next source.
     }
   }
 
-  presets = [];
+  presets = bestPresets;
   render();
-  setStatus("Не удалось загрузить справочник.");
+  setStatus(presets.length ? `Загружено шаблонов: ${presets.length}` : "Не удалось загрузить справочник.");
 }
 
 function uniqueValues(field) {
   return [...new Set(presets.map((preset) => preset[field]).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b, "ru"),
   );
+}
+
+function subgroupValues(group = "") {
+  return [
+    ...new Set(
+      presets
+        .filter((preset) => !group || preset.group === group)
+        .map((preset) => preset.subgroup)
+        .filter(Boolean),
+    ),
+  ].sort((a, b) => a.localeCompare(b, "ru"));
+}
+
+function presetSourceScore(source) {
+  const groups = new Set(source.map((preset) => preset.group).filter(Boolean)).size;
+  const subgroups = new Set(source.map((preset) => preset.subgroup).filter(Boolean)).size;
+  return groups * 1000 + subgroups * 100 + source.length;
 }
 
 function choiceOptions(values, selected, placeholder, customLabel) {
@@ -144,13 +160,6 @@ function toggleCustomChoice(select) {
   if (select.value === CUSTOM_CHOICE) input.focus();
 }
 
-function renderDatalists() {
-  groupList.innerHTML = uniqueValues("group").map((value) => `<option value="${escapeHtml(value)}"></option>`).join("");
-  subgroupList.innerHTML = uniqueValues("subgroup")
-    .map((value) => `<option value="${escapeHtml(value)}"></option>`)
-    .join("");
-}
-
 function renderGroupFilter() {
   const selected = groupFilter.value;
   const groups = uniqueValues("group");
@@ -160,13 +169,27 @@ function renderGroupFilter() {
   if (groups.includes(selected)) groupFilter.value = selected;
 }
 
+function renderSubgroupFilter() {
+  const selected = subgroupFilter.value;
+  const subgroups = subgroupValues(groupFilter.value);
+  subgroupFilter.innerHTML = `<option value="">Все подгруппы</option>${subgroups
+    .map((subgroup) => `<option value="${escapeHtml(subgroup)}">${escapeHtml(subgroup)}</option>`)
+    .join("")}`;
+  if (subgroups.includes(selected)) subgroupFilter.value = selected;
+}
+
 function renderRows() {
   const selectedGroup = groupFilter.value;
+  const selectedSubgroup = subgroupFilter.value;
   const groups = uniqueValues("group");
   const subgroups = uniqueValues("subgroup");
   const visiblePresets = presets
     .map((preset, index) => ({ preset, index }))
-    .filter(({ preset }) => !selectedGroup || preset.group === selectedGroup);
+    .filter(
+      ({ preset }) =>
+        (!selectedGroup || preset.group === selectedGroup) &&
+        (!selectedSubgroup || preset.subgroup === selectedSubgroup),
+    );
 
   presetList.innerHTML = visiblePresets
     .map(
@@ -214,8 +237,8 @@ function renderRows() {
 }
 
 function render() {
-  renderDatalists();
   renderGroupFilter();
+  renderSubgroupFilter();
   renderRows();
 }
 
@@ -334,10 +357,10 @@ async function saveLibrary() {
 function addPreset() {
   syncVisibleRows();
   presets.push({
-    group: groupFilter.value || "Новая группа",
-    subgroup: "Новая подгруппа",
-    title: "Новый шаблон",
-    description: "Описание конструкции.",
+    group: groupFilter.value,
+    subgroup: subgroupFilter.value,
+    title: "",
+    description: "",
   });
   render();
   presetList.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -351,6 +374,11 @@ reloadButton.addEventListener("click", loadPresets);
 saveButton.addEventListener("click", saveLibrary);
 addButton.addEventListener("click", addPreset);
 groupFilter.addEventListener("change", () => {
+  syncVisibleRows();
+  renderSubgroupFilter();
+  renderRows();
+});
+subgroupFilter.addEventListener("change", () => {
   syncVisibleRows();
   renderRows();
 });

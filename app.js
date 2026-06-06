@@ -173,9 +173,8 @@ function isLocalAppServer() {
 }
 
 function techPresetEndpoints() {
-  const endpoints = [cacheBusted(GITHUB_RAW_PRESETS_URL)];
-  if (isLocalAppServer()) endpoints.push(cacheBusted("/api/tech-presets"));
-  endpoints.push(cacheBusted("templates/tech-presets.json"));
+  const endpoints = [cacheBusted("templates/tech-presets.json"), cacheBusted(GITHUB_RAW_PRESETS_URL)];
+  if (isLocalAppServer()) endpoints.unshift(cacheBusted("/api/tech-presets"));
   return endpoints;
 }
 
@@ -207,6 +206,12 @@ function techPresetTitles(group, subgroup) {
   return techPresets.filter(
     (preset) => (!group || preset.group === group) && (!subgroup || preset.subgroup === subgroup),
   );
+}
+
+function techPresetSourceScore(presets) {
+  const groups = new Set(presets.map((preset) => preset.group).filter(Boolean)).size;
+  const subgroups = new Set(presets.map((preset) => preset.subgroup).filter(Boolean)).size;
+  return groups * 1000 + subgroups * 100 + presets.length;
 }
 
 function selectOptions(values, selected, placeholder) {
@@ -258,22 +263,24 @@ function refreshTechPresetSelects() {
 }
 
 async function loadTechPresets() {
+  let bestPresets = [];
+  let bestScore = 0;
   for (const endpoint of techPresetEndpoints()) {
     try {
       const response = await fetch(endpoint, { cache: "no-store" });
       if (!response.ok) continue;
       const presets = normalizeTechPresets(await response.json());
-      if (presets.length) {
-        techPresets = presets;
-        refreshTechPresetSelects();
-        return;
+      const score = techPresetSourceScore(presets);
+      if (score >= bestScore) {
+        bestPresets = presets;
+        bestScore = score;
       }
     } catch {
-      // The static fallback is enough when the API is not available.
+      // Try the next source.
     }
   }
 
-  techPresets = [...DEFAULT_TECH_PRESETS];
+  techPresets = bestPresets.length ? bestPresets : [...DEFAULT_TECH_PRESETS];
   refreshTechPresetSelects();
 }
 
