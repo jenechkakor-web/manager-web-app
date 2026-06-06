@@ -2283,7 +2283,7 @@ function loadDraft() {
     const data = JSON.parse(raw);
     setField("contractNumber", data.contractNumber);
     setField("contractDate", data.contractDate);
-    setField("documentTemplate", data.documentTemplate || "contract");
+    setField("documentTemplate", data.documentTemplate || "invoiceContract");
     setRadioValue("seller", data.seller?.title === SELLERS.ooo.title ? "ooo" : "ip");
     setRadioValue("customerType", data.customerType || "legal");
     setField("customerInn", data.customer?.inn);
@@ -2298,7 +2298,7 @@ function loadDraft() {
     setField("paymentTerms", normalizePaymentValue(data.paymentTerms));
     setField("finalPaymentTiming", data.finalPaymentTiming || "beforeShipment");
     setField("warranty", data.warranty);
-    setField("workDays", data.workDays);
+    setField("workDays", data.workDays || "10");
     setField("workAddress", data.workAddress);
     techDescriptions.innerHTML = "";
     const blocks = data.technicalBlocks?.length

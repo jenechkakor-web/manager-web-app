@@ -144,7 +144,7 @@
                 <span>Шаблон выгрузки</span>
                 <select name="documentTemplate">
                   <option value="contract">Договор подряда</option>
-                  <option value="invoiceContract">Счет-договор</option>
+                  <option value="invoiceContract" selected>Счет-договор</option>
                 </select>
               </label>
               <label>
@@ -177,7 +177,7 @@
               </label>
               <label>
                 <span>Срок выполнения работ, рабочих дней</span>
-                <input name="workDays" type="number" min="1" step="1" required />
+                <input name="workDays" type="number" min="1" step="1" value="10" required />
               </label>
               <label>
                 <span>Адрес монтажа / доставки / работ</span>
@@ -227,6 +227,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260606-groups-5"></script>
+    <script src="app.js?v=20260606-defaults-1"></script>
   </body>
 </html>
