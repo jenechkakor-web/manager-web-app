@@ -73,12 +73,23 @@ const techLibraryEditor = document.querySelector("#techLibraryEditor");
 const techPresetEditorList = document.querySelector("#techPresetEditorList");
 const techLibraryLoginInput = document.querySelector("#techLibraryLoginInput");
 const techLibraryPasswordInput = document.querySelector("#techLibraryPasswordInput");
+const techGitHubTokenInput = document.querySelector("#techGitHubTokenInput");
 
 let itemId = 0;
 let techId = 0;
 let activeTechCard = null;
 let techPresets = [...DEFAULT_TECH_PRESETS];
 let techLibraryToken = sessionStorage.getItem("techLibraryToken") || "";
+let techGitHubToken = localStorage.getItem("techGitHubToken") || "";
+
+const TECH_LIBRARY_ADMIN_LOGIN = "admin";
+const TECH_LIBRARY_ADMIN_PASSWORD = "admin2026";
+const GITHUB_OWNER = "jenechkakor-web";
+const GITHUB_REPO = "manager-web-app";
+const GITHUB_BRANCH = "main";
+const GITHUB_PRESETS_PATH = "templates/tech-presets.json";
+const GITHUB_RAW_PRESETS_URL = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${GITHUB_PRESETS_PATH}`;
+const GITHUB_CONTENTS_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_PRESETS_PATH}`;
 
 const WORD_PAGE_WIDTH = 12240;
 const WORD_PAGE_HEIGHT = 15840;
@@ -151,6 +162,32 @@ function normalizeTechPresets(source) {
     .filter((entry) => entry.title && entry.description);
 }
 
+function cacheBusted(url) {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}v=${Date.now()}`;
+}
+
+function isLocalAppServer() {
+  return ["127.0.0.1", "localhost"].includes(window.location.hostname);
+}
+
+function techPresetEndpoints() {
+  const endpoints = [cacheBusted(GITHUB_RAW_PRESETS_URL)];
+  if (isLocalAppServer()) endpoints.push(cacheBusted("/api/tech-presets"));
+  endpoints.push(cacheBusted("templates/tech-presets.json"));
+  return endpoints;
+}
+
+function utf8ToBase64(value) {
+  const bytes = new TextEncoder().encode(value);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.slice(index, index + chunkSize));
+  }
+  return btoa(binary);
+}
+
 function techPresetText(title) {
   return techPresets.find((preset) => preset.title === title)?.description || "";
 }
@@ -176,9 +213,7 @@ function refreshTechPresetSelects() {
 }
 
 async function loadTechPresets() {
-  const endpoints = ["/api/tech-presets", "templates/tech-presets.json"];
-
-  for (const endpoint of endpoints) {
+  for (const endpoint of techPresetEndpoints()) {
     try {
       const response = await fetch(endpoint, { cache: "no-store" });
       if (!response.ok) continue;
@@ -434,7 +469,10 @@ function getTechnicalDescriptions() {
 function showTechLibraryEditor(showEditor) {
   techLibraryLogin.classList.toggle("hidden", showEditor);
   techLibraryEditor.classList.toggle("hidden", !showEditor);
-  if (showEditor) renderTechPresetEditor();
+  if (showEditor) {
+    techGitHubTokenInput.value = techGitHubToken;
+    renderTechPresetEditor();
+  }
 }
 
 function openTechLibraryModal() {
@@ -494,6 +532,19 @@ async function loginTechLibrary() {
   const login = techLibraryLoginInput.value.trim();
   const password = techLibraryPasswordInput.value;
 
+  if (login === TECH_LIBRARY_ADMIN_LOGIN && password === TECH_LIBRARY_ADMIN_PASSWORD) {
+    techLibraryToken = "browser-admin";
+    sessionStorage.setItem("techLibraryToken", techLibraryToken);
+    techLibraryPasswordInput.value = "";
+    showTechLibraryEditor(true);
+    return;
+  }
+
+  if (!isLocalAppServer()) {
+    alert("Неверный логин или пароль.");
+    return;
+  }
+
   try {
     const response = await fetch("/api/admin/login", {
       method: "POST",
@@ -516,31 +567,61 @@ async function loginTechLibrary() {
   }
 }
 
+function githubHeaders(token) {
+  return {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+}
+
+async function saveTechLibraryToGitHub(presets, token) {
+  const currentResponse = await fetch(`${GITHUB_CONTENTS_API_URL}?ref=${GITHUB_BRANCH}`, {
+    headers: githubHeaders(token),
+    cache: "no-store",
+  });
+
+  if (!currentResponse.ok) throw new Error("GitHub read failed");
+  const currentFile = await currentResponse.json();
+  const content = `${JSON.stringify(presets, null, 2)}\n`;
+  const saveResponse = await fetch(GITHUB_CONTENTS_API_URL, {
+    method: "PUT",
+    headers: {
+      ...githubHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message: "Update technical description presets",
+      content: utf8ToBase64(content),
+      branch: GITHUB_BRANCH,
+      sha: currentFile.sha,
+    }),
+  });
+
+  if (!saveResponse.ok) {
+    const details = await saveResponse.json().catch(() => ({}));
+    throw new Error(details.message || "GitHub save failed");
+  }
+
+  return presets;
+}
+
 async function saveTechLibrary() {
   const presets = readTechPresetEditor();
   if (!presets) return;
+  const githubToken = techGitHubTokenInput.value.trim();
 
   try {
-    const response = await fetch("/api/tech-presets", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${techLibraryToken}`,
-      },
-      body: JSON.stringify(presets),
-    });
-
-    if (response.status === 401 || response.status === 403) {
-      techLibraryToken = "";
-      sessionStorage.removeItem("techLibraryToken");
-      showTechLibraryEditor(false);
-      alert("Сессия администратора завершена. Войдите снова.");
+    if (!githubToken) {
+      alert("Введите GitHub token для сохранения общего справочника.");
       return;
     }
 
-    if (!response.ok) throw new Error("Save failed");
+    const savedPresets = await saveTechLibraryToGitHub(presets, githubToken);
 
-    techPresets = normalizeTechPresets(await response.json());
+    techGitHubToken = githubToken;
+    localStorage.setItem("techGitHubToken", techGitHubToken);
+    techPresets = normalizeTechPresets(savedPresets);
     refreshTechPresetSelects();
     renderTechPresetEditor();
     alert("Справочник сохранен.");

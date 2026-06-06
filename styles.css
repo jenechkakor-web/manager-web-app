@@ -594,6 +594,15 @@ fieldset {
   gap: 12px;
 }
 
+.library-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.library-editor.hidden {
+  display: none;
+}
+
 .library-row {
   display: grid;
   gap: 10px;
