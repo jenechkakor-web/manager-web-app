@@ -24,6 +24,7 @@ const statusLine = document.querySelector("#libraryStatus");
 
 let presets = [];
 let isAdmin = sessionStorage.getItem("techLibraryToken") === "browser-admin";
+const CUSTOM_CHOICE = "__custom__";
 
 function escapeHtml(value) {
   return String(value || "")
@@ -108,6 +109,41 @@ function uniqueValues(field) {
   );
 }
 
+function choiceOptions(values, selected, placeholder, customLabel) {
+  const options = [`<option value=""${selected ? "" : " selected"}>${escapeHtml(placeholder)}</option>`];
+  values.forEach((value) => {
+    options.push(`<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(value)}</option>`);
+  });
+  options.push(`<option value="${CUSTOM_CHOICE}"${selected === CUSTOM_CHOICE ? " selected" : ""}>${escapeHtml(customLabel)}</option>`);
+  return options.join("");
+}
+
+function renderChoice({ selectClass, customClass, values, selected, placeholder, customLabel, customPlaceholder }) {
+  const useCustom = selected && !values.includes(selected);
+  const selectValue = useCustom ? CUSTOM_CHOICE : selected;
+  return `
+    <div class="library-choice-stack">
+      <select class="${selectClass} library-choice-select" data-custom-class="${customClass}">
+        ${choiceOptions(values, selectValue, placeholder, customLabel)}
+      </select>
+      <input class="${customClass} library-choice-custom${useCustom ? "" : " hidden"}" value="${useCustom ? escapeHtml(selected) : ""}" placeholder="${escapeHtml(customPlaceholder)}" />
+    </div>
+  `;
+}
+
+function readChoice(row, selectSelector, customSelector) {
+  const select = row.querySelector(selectSelector);
+  if (select.value === CUSTOM_CHOICE) return row.querySelector(customSelector).value.trim();
+  return select.value.trim();
+}
+
+function toggleCustomChoice(select) {
+  const input = select.closest(".library-choice-stack")?.querySelector(`.${select.dataset.customClass}`);
+  if (!input) return;
+  input.classList.toggle("hidden", select.value !== CUSTOM_CHOICE);
+  if (select.value === CUSTOM_CHOICE) input.focus();
+}
+
 function renderDatalists() {
   groupList.innerHTML = uniqueValues("group").map((value) => `<option value="${escapeHtml(value)}"></option>`).join("");
   subgroupList.innerHTML = uniqueValues("subgroup")
@@ -126,6 +162,8 @@ function renderGroupFilter() {
 
 function renderRows() {
   const selectedGroup = groupFilter.value;
+  const groups = uniqueValues("group");
+  const subgroups = uniqueValues("subgroup");
   const visiblePresets = presets
     .map((preset, index) => ({ preset, index }))
     .filter(({ preset }) => !selectedGroup || preset.group === selectedGroup);
@@ -137,11 +175,27 @@ function renderRows() {
           <div class="library-group-grid">
             <label>
               <span>Группа</span>
-              <input class="library-group" list="libraryGroupList" value="${escapeHtml(preset.group)}" />
+              ${renderChoice({
+                selectClass: "library-group",
+                customClass: "library-group-custom",
+                values: groups,
+                selected: preset.group,
+                placeholder: "Выберите группу",
+                customLabel: "+ Новая группа",
+                customPlaceholder: "Новая группа",
+              })}
             </label>
             <label>
               <span>Подгруппа</span>
-              <input class="library-subgroup" list="librarySubgroupList" value="${escapeHtml(preset.subgroup)}" />
+              ${renderChoice({
+                selectClass: "library-subgroup",
+                customClass: "library-subgroup-custom",
+                values: subgroups,
+                selected: preset.subgroup,
+                placeholder: "Выберите подгруппу",
+                customLabel: "+ Новая подгруппа",
+                customPlaceholder: "Новая подгруппа",
+              })}
             </label>
             <button class="icon-button" data-remove-preset="${index}" type="button" title="Удалить шаблон">×</button>
           </div>
@@ -169,8 +223,8 @@ function syncVisibleRows() {
   presetList.querySelectorAll(".library-row").forEach((row) => {
     const index = Number(row.dataset.index);
     presets[index] = {
-      group: row.querySelector(".library-group").value.trim(),
-      subgroup: row.querySelector(".library-subgroup").value.trim(),
+      group: readChoice(row, ".library-group", ".library-group-custom"),
+      subgroup: readChoice(row, ".library-subgroup", ".library-subgroup-custom"),
       title: row.querySelector(".library-title").value.trim(),
       description: row.querySelector(".library-description").value.trim(),
     };
@@ -307,6 +361,11 @@ presetList.addEventListener("click", (event) => {
   render();
 });
 presetList.addEventListener("input", () => {
+  setStatus("Есть несохраненные изменения.");
+});
+
+presetList.addEventListener("change", (event) => {
+  if (event.target.matches(".library-choice-select")) toggleCustomChoice(event.target);
   setStatus("Есть несохраненные изменения.");
 });
 

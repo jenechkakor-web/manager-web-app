@@ -73,29 +73,17 @@ const totalAmount = document.querySelector("#totalAmount");
 const sellerDetails = document.querySelector("#sellerDetails");
 const finalPaymentTimingLabel = document.querySelector("#finalPaymentTimingLabel");
 const techDescriptions = document.querySelector("#techDescriptions");
-const techLibraryModal = document.querySelector("#techLibraryModal");
-const techLibraryLogin = document.querySelector("#techLibraryLogin");
-const techLibraryEditor = document.querySelector("#techLibraryEditor");
-const techPresetEditorList = document.querySelector("#techPresetEditorList");
-const techLibraryLoginInput = document.querySelector("#techLibraryLoginInput");
-const techLibraryPasswordInput = document.querySelector("#techLibraryPasswordInput");
-const techGitHubTokenInput = document.querySelector("#techGitHubTokenInput");
 
 let itemId = 0;
 let techId = 0;
 let activeTechCard = null;
 let techPresets = [...DEFAULT_TECH_PRESETS];
-let techLibraryToken = sessionStorage.getItem("techLibraryToken") || "";
-let techGitHubToken = localStorage.getItem("techGitHubToken") || "";
 
-const TECH_LIBRARY_ADMIN_LOGIN = "admin";
-const TECH_LIBRARY_ADMIN_PASSWORD = "admin2026";
 const GITHUB_OWNER = "jenechkakor-web";
 const GITHUB_REPO = "manager-web-app";
 const GITHUB_BRANCH = "main";
 const GITHUB_PRESETS_PATH = "templates/tech-presets.json";
 const GITHUB_RAW_PRESETS_URL = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${GITHUB_PRESETS_PATH}`;
-const GITHUB_CONTENTS_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_PRESETS_PATH}`;
 
 const WORD_PAGE_WIDTH = 12240;
 const WORD_PAGE_HEIGHT = 15840;
@@ -191,57 +179,82 @@ function techPresetEndpoints() {
   return endpoints;
 }
 
-function utf8ToBase64(value) {
-  const bytes = new TextEncoder().encode(value);
-  const chunkSize = 0x8000;
-  let binary = "";
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.slice(index, index + chunkSize));
-  }
-  return btoa(binary);
+function techPresetByTitle(title) {
+  return techPresets.find((preset) => preset.title === title);
 }
 
 function techPresetText(title) {
-  return techPresets.find((preset) => preset.title === title)?.description || "";
+  return techPresetByTitle(title)?.description || "";
 }
 
-function groupedTechPresets() {
-  return techPresets.reduce((groups, preset) => {
-    const group = preset.group || "Общее";
-    const subgroup = preset.subgroup || "Без подгруппы";
-    const key = `${group}|||${subgroup}`;
-    if (!groups.has(key)) groups.set(key, { group, subgroup, presets: [] });
-    groups.get(key).presets.push(preset);
-    return groups;
-  }, new Map());
+function uniqueSorted(values) {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
 }
 
-function techPresetOptions(selected = "") {
-  const hasSelected = techPresets.some((preset) => preset.title === selected);
-  const missingSelected =
-    selected && !hasSelected ? `<option value="${escapeHtml(selected)}">${escapeHtml(selected)}</option>` : "";
-  const options = [...groupedTechPresets().values()]
-    .map(
-      ({ group, subgroup, presets }) => `
-        <optgroup label="${escapeHtml(`${group} / ${subgroup}`)}">
-          ${presets
-            .map((preset) => `<option value="${escapeHtml(preset.title)}">${escapeHtml(preset.title)}</option>`)
-            .join("")}
-        </optgroup>
-      `,
-    )
+function techGroups() {
+  return uniqueSorted(techPresets.map((preset) => preset.group || "Общее"));
+}
+
+function techSubgroups(group) {
+  return uniqueSorted(
+    techPresets
+      .filter((preset) => !group || preset.group === group)
+      .map((preset) => preset.subgroup || "Без подгруппы"),
+  );
+}
+
+function techPresetTitles(group, subgroup) {
+  return techPresets.filter(
+    (preset) => (!group || preset.group === group) && (!subgroup || preset.subgroup === subgroup),
+  );
+}
+
+function selectOptions(values, selected, placeholder) {
+  const options = values
+    .map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
     .join("");
+  const missingSelected =
+    selected && !values.includes(selected) ? `<option value="${escapeHtml(selected)}">${escapeHtml(selected)}</option>` : "";
+  return `<option value="">${escapeHtml(placeholder)}</option>${missingSelected}${options}`;
+}
 
-  return `<option value="">Своё описание</option>${missingSelected}${options}`;
+function techGroupOptions(selected = "") {
+  return selectOptions(techGroups(), selected, "Группа");
+}
+
+function techSubgroupOptions(group = "", selected = "") {
+  return selectOptions(techSubgroups(group), selected, "Подгруппа");
+}
+
+function techPresetOptions(group = "", subgroup = "", selected = "") {
+  const values = group ? techPresetTitles(group, subgroup).map((preset) => preset.title) : [];
+  return selectOptions(values, selected, "Своё описание");
+}
+
+function syncTechPresetControls(card) {
+  const groupSelect = card.querySelector(".tech-group");
+  const subgroupSelect = card.querySelector(".tech-subgroup");
+  const presetSelect = card.querySelector(".tech-preset");
+  const selectedPreset = techPresetByTitle(card.dataset.preset || presetSelect.value || "");
+  const group = card.dataset.group || selectedPreset?.group || groupSelect.value || "";
+  const subgroup = card.dataset.subgroup || selectedPreset?.subgroup || subgroupSelect.value || "";
+  const preset = selectedPreset?.title || "";
+
+  groupSelect.innerHTML = techGroupOptions(group);
+  groupSelect.value = group;
+  subgroupSelect.innerHTML = techSubgroupOptions(group, subgroup);
+  subgroupSelect.value = subgroup;
+  subgroupSelect.disabled = !group;
+  presetSelect.innerHTML = techPresetOptions(group, subgroup, preset);
+  presetSelect.value = preset;
+
+  card.dataset.group = group;
+  card.dataset.subgroup = subgroup;
+  card.dataset.preset = preset;
 }
 
 function refreshTechPresetSelects() {
-  techDescriptions.querySelectorAll(".tech-card").forEach((card) => {
-    const select = card.querySelector(".tech-preset");
-    const selected = card.dataset.preset || select.value || "";
-    select.innerHTML = techPresetOptions(selected);
-    select.value = selected;
-  });
+  techDescriptions.querySelectorAll(".tech-card").forEach(syncTechPresetControls);
 }
 
 async function loadTechPresets() {
@@ -432,17 +445,30 @@ async function pasteImagesFromClipboard(card) {
 
 function addTechDescription(value = "") {
   const data = typeof value === "string" ? { description: value, mockups: [] } : value || {};
+  const dataPreset = techPresetByTitle(data.preset || "");
   techId += 1;
   const card = document.createElement("div");
   card.className = "tech-card";
   card.tabIndex = 0;
   card.mockups = [...(data.mockups || data.images || [])];
+  card.dataset.group = data.group || dataPreset?.group || "";
+  card.dataset.subgroup = data.subgroup || dataPreset?.subgroup || "";
+  card.dataset.preset = data.preset || "";
   card.innerHTML = `
     <div class="tech-card-header">
-      <select class="tech-preset">
-        ${techPresetOptions(data.preset || "")}
-      </select>
-      <button class="icon-button" type="button" title="Удалить описание">×</button>
+      <label>
+        <span>Группа</span>
+        <select class="tech-group"></select>
+      </label>
+      <label>
+        <span>Подгруппа</span>
+        <select class="tech-subgroup"></select>
+      </label>
+      <label>
+        <span>Шаблон</span>
+        <select class="tech-preset"></select>
+      </label>
+      <button class="icon-button tech-remove-button" type="button" title="Удалить описание">×</button>
     </div>
     <div class="tech-attachments">
       <div class="tech-attachment-actions">
@@ -463,28 +489,42 @@ function addTechDescription(value = "") {
     if (!event.target.closest("input, textarea, select, button, label")) card.focus({ preventScroll: true });
   });
   card.addEventListener("paste", (event) => handleTechPaste(card, event));
+  card.querySelector(".tech-group").addEventListener("change", (event) => {
+    card.dataset.group = event.target.value;
+    card.dataset.subgroup = "";
+    card.dataset.preset = "";
+    syncTechPresetControls(card);
+  });
+  card.querySelector(".tech-subgroup").addEventListener("change", (event) => {
+    card.dataset.subgroup = event.target.value;
+    card.dataset.preset = "";
+    syncTechPresetControls(card);
+  });
   card.querySelector(".tech-preset").addEventListener("change", (event) => {
     const preset = event.target.value;
+    const presetData = techPresetByTitle(preset);
+    card.dataset.group = presetData?.group || card.dataset.group || "";
+    card.dataset.subgroup = presetData?.subgroup || card.dataset.subgroup || "";
     card.dataset.preset = preset;
+    syncTechPresetControls(card);
     if (preset) card.querySelector(".technical-description").value = techPresetText(preset);
   });
   card.querySelector(".tech-image-input").addEventListener("change", (event) => handleTechImages(card, event));
   card.querySelector(".tech-paste-button").addEventListener("click", () => pasteImagesFromClipboard(card));
-  card.querySelector(".icon-button").addEventListener("click", () => {
+  card.querySelector(".tech-remove-button").addEventListener("click", () => {
     if (activeTechCard === card) activeTechCard = null;
     card.remove();
     if (!techDescriptions.children.length) addTechDescription();
   });
   renderTechImagePreview(card);
-  if (data.preset) {
-    card.querySelector(".tech-preset").value = data.preset;
-    card.dataset.preset = data.preset;
-  }
+  syncTechPresetControls(card);
 }
 
 function getTechnicalBlocks() {
   return [...techDescriptions.querySelectorAll(".tech-card")]
     .map((card) => ({
+      group: card.dataset.group || card.querySelector(".tech-group").value || "",
+      subgroup: card.dataset.subgroup || card.querySelector(".tech-subgroup").value || "",
       preset: card.dataset.preset || card.querySelector(".tech-preset").value || "",
       description: card.querySelector(".technical-description").value.trim(),
       mockups: [...(card.mockups || [])],
@@ -496,23 +536,6 @@ function getTechnicalDescriptions() {
   return getTechnicalBlocks()
     .map((block) => block.description)
     .filter(Boolean);
-}
-
-function showTechLibraryEditor(showEditor) {
-  techLibraryLogin.classList.toggle("hidden", showEditor);
-  techLibraryEditor.classList.toggle("hidden", !showEditor);
-  if (showEditor) {
-    techGitHubTokenInput.value = techGitHubToken;
-    renderTechPresetEditor();
-  }
-}
-
-function openTechLibraryModal() {
-  window.open("library.html?v=20260606-groups-1", "techLibrary");
-}
-
-function closeTechLibraryModal() {
-  techLibraryModal.classList.add("hidden");
 }
 
 function renderTechPresetEditor() {
@@ -2349,26 +2372,6 @@ document.querySelector("#downloadContractButton").addEventListener("click", asyn
   }
 });
 document.querySelector("#addTechDescriptionButton").addEventListener("click", () => addTechDescription());
-document.querySelector("#manageTechLibraryButton").addEventListener("click", openTechLibraryModal);
-document.querySelector("#closeTechLibraryButton").addEventListener("click", closeTechLibraryModal);
-document.querySelector("#techLibraryLoginButton").addEventListener("click", loginTechLibrary);
-document.querySelector("#saveTechPresetButton").addEventListener("click", saveTechLibrary);
-document.querySelector("#addTechPresetButton").addEventListener("click", () => {
-  techPresets.push({ title: "", description: "" });
-  renderTechPresetEditor();
-});
-techPresetEditorList.addEventListener("click", (event) => {
-  const removeButton = event.target.closest("[data-remove-preset]");
-  if (!removeButton) return;
-  techPresets.splice(Number(removeButton.dataset.removePreset), 1);
-  renderTechPresetEditor();
-});
-techLibraryPasswordInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") loginTechLibrary();
-});
-techLibraryModal.addEventListener("click", (event) => {
-  if (event.target === techLibraryModal) closeTechLibraryModal();
-});
 form.addEventListener("change", (event) => {
   if (event.target.name === "customerType") toggleCustomerFields();
   if (event.target.name === "paymentTerms") toggleFinalPaymentTiming();

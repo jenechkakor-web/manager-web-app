@@ -476,13 +476,22 @@ fieldset {
 }
 
 .tech-card-header {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr) auto;
   gap: 8px;
+  align-items: end;
+}
+
+.tech-card-header label {
+  min-width: 0;
 }
 
 .tech-card-header select {
-  flex: 1;
+  width: 100%;
+}
+
+.tech-remove-button {
+  margin-bottom: 1px;
 }
 
 .tech-attachments {
@@ -599,7 +608,8 @@ fieldset {
 }
 
 .library-workspace {
-  grid-template-columns: 1fr;
+  display: block;
+  min-height: calc(100vh - 40px);
 }
 
 .library-content {
@@ -612,6 +622,19 @@ fieldset {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 10px;
   align-items: end;
+}
+
+.library-toolbar {
+  grid-template-columns: minmax(260px, 1.5fr) minmax(220px, 1fr) auto;
+}
+
+.library-group-grid .icon-button {
+  align-self: end;
+}
+
+.library-choice-stack {
+  display: grid;
+  gap: 8px;
 }
 
 .status-line {
@@ -713,7 +736,12 @@ fieldset {
   }
 
   .library-toolbar,
-  .library-group-grid {
+  .library-group-grid,
+  .tech-card-header {
     grid-template-columns: 1fr;
+  }
+
+  .tech-remove-button {
+    width: 100%;
   }
 }
