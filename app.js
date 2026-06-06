@@ -240,9 +240,9 @@ function syncTechPresetControls(card) {
   const groupSelect = card.querySelector(".tech-group");
   const subgroupSelect = card.querySelector(".tech-subgroup");
   const presetSelect = card.querySelector(".tech-preset");
-  const selectedPreset = techPresetByTitle(card.dataset.preset || presetSelect.value || "");
-  const group = card.dataset.group || selectedPreset?.group || groupSelect.value || "";
-  const subgroup = card.dataset.subgroup || selectedPreset?.subgroup || subgroupSelect.value || "";
+  const selectedPreset = techPresetByTitle(card.dataset.preset || "");
+  const group = card.dataset.group || selectedPreset?.group || "";
+  const subgroup = card.dataset.subgroup || selectedPreset?.subgroup || "";
   const preset = selectedPreset?.title || "";
 
   groupSelect.innerHTML = techGroupOptions(group);
