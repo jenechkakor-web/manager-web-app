@@ -1731,7 +1731,10 @@ function paragraphText(xml) {
 }
 
 function paragraphFromTemplate(original, text, options = {}) {
-  const pPr = stripHighlight(original.match(/<w:pPr[\s\S]*?<\/w:pPr>/)?.[0] || "");
+  let pPr = stripHighlight(original.match(/<w:pPr[\s\S]*?<\/w:pPr>/)?.[0] || "");
+  if (options.removeRightIndent) {
+    pPr = pPr.replace(/(<w:ind\b[^>]*?)\s+w:right="[^"]*"/g, "$1");
+  }
   const rPr = runPropertiesFromTemplate(original, options);
   return `<w:p>${pPr}${String(text)
     .split("\n")
@@ -2372,7 +2375,7 @@ async function buildInvoiceContractDocxBlob(data) {
   );
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Исполнитель:"), invoiceSellerIntro(data.seller));
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("Балашиха") && text.includes("Мирской"), "");
-  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("\u041a\u041f\u041f 771801001") || (text.includes("\u0418\u041f \u041a\u0423\u041f\u041e\u0420\u041e\u0412\u0410") && text.includes("\u0418\u041d\u041d")), contractor.name, { bold: true });
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("\u041a\u041f\u041f 771801001") || (text.includes("\u0418\u041f \u041a\u0423\u041f\u041e\u0420\u041e\u0412\u0410") && text.includes("\u0418\u041d\u041d")), contractor.name, { bold: true, removeRightIndent: true });
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Адрес:"), contractor.address);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Email:"), contractor.email);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("В ООО") || text.startsWith("В "), contractor.bank);
