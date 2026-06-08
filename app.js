@@ -1145,8 +1145,14 @@ function invoiceSellerIntro(seller) {
 
 function invoiceContractorLines(data) {
   const seller = data.seller;
+  const nameParts = [
+    seller.fullName,
+    `ИНН ${seller.inn}`,
+    seller.kpp ? `КПП ${seller.kpp}` : "",
+    `${seller.ogrnLabel} ${seller.ogrn}`,
+  ].filter(Boolean);
   return {
-    name: `${sellerShortName(seller)} ИНН ${seller.inn} КПП ${seller.kpp || "-"}`,
+    name: nameParts.join("\n"),
     address: `Адрес: ${sellerAddress(seller)}${seller.phone ? ` Т. ${seller.phone}` : ""}`,
     email: `${seller.email ? `Email: ${seller.email} ` : ""}Р/С № ${seller.checkingAccount}`,
     bank: `В ${seller.bankName}`,
@@ -2365,7 +2371,7 @@ async function buildInvoiceContractDocxBlob(data) {
   );
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Исполнитель:"), invoiceSellerIntro(data.seller));
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("Балашиха") && text.includes("Мирской"), "");
-  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("ИП КУПОРОВА") && text.includes("ИНН"), contractor.name, { bold: true });
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("\u041a\u041f\u041f 771801001") || (text.includes("\u0418\u041f \u041a\u0423\u041f\u041e\u0420\u041e\u0412\u0410") && text.includes("\u0418\u041d\u041d")), contractor.name, { bold: true });
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Адрес:"), contractor.address);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Email:"), contractor.email);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("В ООО") || text.startsWith("В "), contractor.bank);
