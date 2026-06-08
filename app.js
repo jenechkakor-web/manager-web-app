@@ -1154,7 +1154,7 @@ function invoiceContractorLines(data) {
   return {
     name: `${displayName}
 ${registrationLines.join("\n")}`,
-    address: `Адрес: ${sellerAddress(seller)}${seller.phone ? ` Т. ${seller.phone}` : ""}`,
+    address: `Адрес: ${sellerAddress(seller)}${seller.phone ? `\nТ. ${seller.phone}` : ""}`,
     email: `${seller.email ? `Email: ${seller.email} ` : ""}Р/С № ${seller.checkingAccount}`,
     bank: `В ${seller.bankName}`,
     correspondent: `К/С № ${seller.correspondentAccount}`,
