@@ -1145,14 +1145,15 @@ function invoiceSellerIntro(seller) {
 
 function invoiceContractorLines(data) {
   const seller = data.seller;
-  const nameParts = [
-    seller.fullName,
+  const displayName = seller.title === SELLERS.ip.title ? "ИП Купорова Е.А." : seller.fullName;
+  const registrationParts = [
     `ИНН ${seller.inn}`,
     seller.kpp ? `КПП ${seller.kpp}` : "",
     `${seller.ogrnLabel} ${seller.ogrn}`,
   ].filter(Boolean);
   return {
-    name: nameParts.join("\n"),
+    name: `${displayName}
+${registrationParts.join(" ")}`,
     address: `Адрес: ${sellerAddress(seller)}${seller.phone ? ` Т. ${seller.phone}` : ""}`,
     email: `${seller.email ? `Email: ${seller.email} ` : ""}Р/С № ${seller.checkingAccount}`,
     bank: `В ${seller.bankName}`,
