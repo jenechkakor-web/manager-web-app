@@ -1,0 +1,20 @@
+/*
+  Cache-Control: no-store
+
+/*.html
+  Cache-Control: no-store
+
+/*.js
+  Cache-Control: no-store
+
+/*.css
+  Cache-Control: no-store
+
+/*.docx
+  Cache-Control: no-store
+
+/templates/*
+  Cache-Control: no-store
+
+/assets/*
+  Cache-Control: no-store
