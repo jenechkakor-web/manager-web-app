@@ -1104,9 +1104,14 @@ function invoiceMoney(amount) {
 function longDateText(dateValue) {
   if (!dateValue) return "";
   const date = new Date(`${dateValue}T00:00:00`);
-  const day = new Intl.DateTimeFormat("ru-RU", { day: "numeric" }).format(date);
-  const month = new Intl.DateTimeFormat("ru-RU", { month: "long" }).format(date);
-  const year = date.getFullYear();
+  const parts = new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).formatToParts(date);
+  const day = parts.find((part) => part.type === "day")?.value || "";
+  const month = parts.find((part) => part.type === "month")?.value || "";
+  const year = parts.find((part) => part.type === "year")?.value || date.getFullYear();
   return `${day} ${month} ${year}`;
 }
 
@@ -2160,6 +2165,128 @@ function updateInvoiceSignatureTable(tableXml, data, signatureSealFiles = [], oc
   return addSellerSignatureSealToTable(updatedTable, 1, 0, signatureSealFiles, occurrence);
 }
 
+function standaloneInvoiceSellerDetails(data) {
+  const seller = data.seller;
+  return [
+    `${seller.fullName}, ИНН ${seller.inn}${seller.kpp ? `, КПП ${seller.kpp}` : ""}`,
+    seller.legalAddress || "",
+    seller.phone ? `тел.: ${seller.phone}` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function standaloneInvoiceCustomerDetails(data) {
+  if (data.customerType === "legal") {
+    return [
+      data.customer.name,
+      data.customer.inn ? `ИНН ${data.customer.inn}` : "",
+      data.customer.kpp ? `КПП ${data.customer.kpp}` : "",
+      data.customer.address || "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  return [
+    data.customer.name,
+    data.customer.passport ? `паспорт: ${data.customer.passport}` : "",
+    data.customer.address || "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function standaloneInvoiceBankName(seller) {
+  return `${seller.bankName} г. Москва`;
+}
+
+function updateStandaloneInvoiceBankTable(tableXml, data) {
+  const seller = data.seller;
+  return replaceTableCellRows(tableXml, [
+    null,
+    ["", standaloneInvoiceBankName(seller), "БИК", seller.bankBik],
+    ["", "", "Сч. №", seller.correspondentAccount],
+    ["", "Банк получателя", "", ""],
+    ["", "ИНН", seller.inn, "КПП", seller.kpp || "", "Сч. №", seller.checkingAccount],
+    ["", seller.fullName, "", ""],
+    null,
+    ["", "Получатель", "", ""],
+  ]);
+}
+
+function updateStandaloneInvoicePartiesTable(tableXml, data) {
+  const title = `Счет на оплату № ${data.contractNumber} от ${longDateText(data.contractDate)} г.`;
+  return replaceTableCellRows(tableXml, [
+    ["", title, ""],
+    null,
+    null,
+    null,
+    ["", "Поставщик\n(Исполнитель):", standaloneInvoiceSellerDetails(data), ""],
+    null,
+    null,
+    ["", "Покупатель\n(Заказчик):", standaloneInvoiceCustomerDetails(data), ""],
+    null,
+    null,
+    ["", "Основание:", "", ""],
+  ]);
+}
+
+function updateStandaloneInvoiceItemsTable(tableXml, data) {
+  const rows = tableRows(tableXml);
+  if (rows.length < 2) return tableXml;
+
+  const itemTemplate = rows[1].xml;
+  const itemRows = data.items.map((item) =>
+    replaceRowCells(itemTemplate, [
+      "",
+      String(item.number),
+      item.name,
+      plainMoney(item.qty),
+      "шт",
+      invoiceMoney(item.price),
+      invoiceMoney(item.sum),
+    ]),
+  );
+
+  return tableXml.slice(0, rows[1].start) + itemRows.join("") + tableXml.slice(rows[1].end);
+}
+
+function updateStandaloneInvoiceTotalsTable(tableXml, data) {
+  return replaceTableCellRows(tableXml, [
+    null,
+    ["", "", "", "Итого:", invoiceMoney(data.totals.grandTotal)],
+    ["", "", "", `В том числе ${data.seller.vatLabel}:`, invoiceMoney(data.totals.vat)],
+    ["", "", "", "Всего к оплате:", invoiceMoney(data.totals.grandTotal)],
+  ]);
+}
+
+function sellerInvoiceSigner(data) {
+  const isIp = sellerKeyFromData(data) === "ip";
+  return {
+    title: isIp ? "Предприниматель" : "Генеральный директор",
+    name: "Купорова Е. А.",
+  };
+}
+
+function updateStandaloneInvoiceFooterTable(tableXml, data, signatureSealFiles = []) {
+  const signer = sellerInvoiceSigner(data);
+  let updatedTable = replaceTableCellRows(tableXml, [
+    ["", `Всего наименований ${data.items.length}, на сумму ${invoiceMoney(data.totals.grandTotal)} руб.`, ""],
+    ["", rubleWords(data.totals.grandTotal), "", ""],
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    ["", signer.title, "", "", "", "", signer.name, ""],
+  ]);
+  updatedTable = addSellerSignatureSealToTable(updatedTable, 9, 5, signatureSealFiles, 0);
+  return updatedTable;
+}
+
 function blankParagraphs(count) {
   return Array.from({ length: count }, () => wParagraph("")).join("");
 }
@@ -2425,15 +2552,48 @@ async function buildInvoiceContractDocxBlob(data) {
   return makeZip(files);
 }
 
+async function buildStandaloneInvoiceDocxBlob(data) {
+  const response = await fetch("invoice_template.docx");
+  if (!response.ok) throw new Error("Invoice template not found");
+  const files = await unzipDocx(await response.arrayBuffer());
+  const signatureSealFiles = await loadSellerSignatureSealFiles(data, {
+    relPrefix: "rIdStandaloneInvoiceSignature",
+    filePrefix: "standalone-invoice-signature-seal",
+    idOffset: 180,
+  });
+
+  let documentXml = fileText(files, "word/document.xml");
+  documentXml = updateTableAt(documentXml, 1, (table) => updateStandaloneInvoiceBankTable(table, data));
+  documentXml = updateTableAt(documentXml, 2, (table) => updateStandaloneInvoicePartiesTable(table, data));
+  documentXml = updateTableAt(documentXml, 3, (table) => updateStandaloneInvoiceItemsTable(table, data));
+  documentXml = updateTableAt(documentXml, 4, (table) => updateStandaloneInvoiceTotalsTable(table, data));
+  documentXml = updateTableAt(documentXml, 5, (table) => updateStandaloneInvoiceFooterTable(table, data, signatureSealFiles));
+
+  let relsXml = fileText(files, "word/_rels/document.xml.rels");
+  let contentTypesXml = fileText(files, "[Content_Types].xml");
+  signatureSealFiles.forEach((image) => {
+    relsXml = addRelationshipXml(relsXml, image.relId, image.target);
+    contentTypesXml = ensureImageContentType(contentTypesXml, image.mime);
+    replaceFile(files, image.path, image.bytes);
+  });
+
+  replaceFile(files, "word/document.xml", documentXml);
+  replaceFile(files, "word/_rels/document.xml.rels", relsXml);
+  replaceFile(files, "[Content_Types].xml", contentTypesXml);
+  return makeZip(files);
+}
+
 function contractDownloadName(data) {
   const number = data.contractNumber || "без номера";
-  return data.documentTemplate === "invoiceContract"
-    ? `Счет-договор №${number}.docx`
-    : `Договор №${number} с приложением.docx`;
+  if (data.documentTemplate === "invoiceContract") return `Счет-договор №${number}.docx`;
+  if (data.documentTemplate === "invoice") return `Счет на оплату №${number}.docx`;
+  return `Договор №${number} с приложением.docx`;
 }
 
 function buildSelectedDocxBlob(data) {
-  return data.documentTemplate === "invoiceContract" ? buildInvoiceContractDocxBlob(data) : buildTemplateDocxBlob(data);
+  if (data.documentTemplate === "invoiceContract") return buildInvoiceContractDocxBlob(data);
+  if (data.documentTemplate === "invoice") return buildStandaloneInvoiceDocxBlob(data);
+  return buildTemplateDocxBlob(data);
 }
 
 async function saveContractRegistryEntry(data, status) {
