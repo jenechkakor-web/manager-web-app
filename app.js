@@ -1209,6 +1209,23 @@ function invoicePaymentTermsText(data) {
   return `${prefix}Оплата в размере ${docMoney(total)} (${rubleWords(total)}) ${finalPaymentTimingText(data.finalPaymentTiming)}.`;
 }
 
+function measurementInvoicePaymentTermsText(data) {
+  const percent = Number(data.paymentTerms) || 0;
+  const total = data.totals.grandTotal;
+
+  if (percent === 100) {
+    return `Оплата настоящего Счет-договора производится в размере 100% в сумме ${docMoney(total)} (${rubleWords(total)}) в течение 5 (пяти) рабочих дней от даты его составления. Работы выполняются после поступления оплаты на расчетный счет Подрядчика.`;
+  }
+
+  if (percent > 0) {
+    const prepay = (total * percent) / 100;
+    const rest = total - prepay;
+    return `Оплата настоящего Счет-договора производится следующим образом: предоплата ${percent}% в размере ${docMoney(prepay)} (${rubleWords(prepay)}) в течение 5 (пяти) рабочих дней от даты его составления, оплата остатка ${100 - percent}% в размере ${docMoney(rest)} (${rubleWords(rest)}) ${finalPaymentTimingText(data.finalPaymentTiming)}. Работы выполняются после поступления предоплаты на расчетный счет Подрядчика.`;
+  }
+
+  return `Оплата настоящего Счет-договора производится в размере ${docMoney(total)} (${rubleWords(total)}) ${finalPaymentTimingText(data.finalPaymentTiming)}.`;
+}
+
 function buildPaymentTermsText(data) {
   return buildPaymentTermsRuns(data).map((run) => run.text).join("");
 }
@@ -2114,10 +2131,11 @@ function updateInvoiceBankTable(tableXml, data) {
   ]);
 }
 
-function updateInvoiceItemsTable(tableXml, data) {
+function updateInvoiceItemsTable(tableXml, data, options = {}) {
   const rows = tableRows(tableXml);
   if (rows.length < 4) return tableXml;
 
+  const unitLabel = options.unitLabel || "шт";
   const itemTemplate = rows[1].xml;
   const totalTemplate = rows[rows.length - 2].xml;
   const wordsTemplate = rows[rows.length - 1].xml;
@@ -2125,7 +2143,7 @@ function updateInvoiceItemsTable(tableXml, data) {
     replaceRowCells(itemTemplate, [
       `${item.number}.`,
       item.name,
-      `${plainMoney(item.qty)} (шт)`,
+      `${plainMoney(item.qty)} (${unitLabel})`,
       invoiceMoney(item.price),
       invoiceMoney(item.sum),
     ]),
@@ -2160,8 +2178,10 @@ function updateInvoiceSignatureRow(rowXml, data) {
 function updateInvoiceSignatureTable(tableXml, data, signatureSealFiles = [], occurrence = 0) {
   const rows = tableRows(tableXml);
   if (rows.length < 2) return tableXml;
-  const signatureRow = updateInvoiceSignatureRow(rows[1].xml, data);
-  const updatedTable = tableXml.slice(0, rows[1].start) + signatureRow + tableXml.slice(rows[1].end);
+  const updatedTable = replaceTableCellRows(tableXml, [
+    null,
+    [`____________________ ${sellerShortName(data.seller)}`, `__________________ ${customerSignatureName(data)}`],
+  ]);
   return addSellerSignatureSealToTable(updatedTable, 1, 0, signatureSealFiles, occurrence);
 }
 
@@ -2362,6 +2382,10 @@ function technicalBlockXml(data, imageRels) {
     .join("");
 }
 
+function measurementTechnicalBlockXml(data, imageRels) {
+  return `${technicalBlockXml(data, imageRels)}${wParagraph(`Адрес объекта: ${data.workAddress || "не указан"}`)}${wParagraph(`Срок выполнения работ: до ${workDaysText(data.workDays)} рабочих дней со дня получения оплаты и предоставления доступа к объекту.`)}${blankParagraphs(3)}`;
+}
+
 function addRelationshipXml(relsXml, relId, target) {
   const relationship = `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${target}"/>`;
   return relsXml.replace("</Relationships>", `${relationship}</Relationships>`);
@@ -2475,19 +2499,20 @@ async function buildTemplateDocxBlob(data) {
   return makeZip(files);
 }
 
-async function buildInvoiceContractDocxBlob(data) {
-  const response = await fetch("schet_dogovor_template.docx");
+async function buildInvoiceContractDocxBlob(data, options = {}) {
+  const isMeasurement = options.kind === "measurement";
+  const response = await fetch(options.templateUrl || "schet_dogovor_template.docx");
   if (!response.ok) throw new Error("Template not found");
   const files = await unzipDocx(await response.arrayBuffer());
   const imageFiles = createImageFilesFromBlocks(data, {
-    relPrefix: "rIdInvoiceMockup",
-    filePrefix: "invoice-mockup",
-    idOffset: 40,
+    relPrefix: options.imageRelPrefix || "rIdInvoiceMockup",
+    filePrefix: options.imageFilePrefix || "invoice-mockup",
+    idOffset: options.imageIdOffset || 40,
   });
   const signatureSealFiles = await loadSellerSignatureSealFiles(data, {
-    relPrefix: "rIdInvoiceSignature",
-    filePrefix: "invoice-signature-seal",
-    idOffset: 140,
+    relPrefix: options.signatureRelPrefix || "rIdInvoiceSignature",
+    filePrefix: options.signatureFilePrefix || "invoice-signature-seal",
+    idOffset: options.signatureIdOffset || 140,
   });
 
   const longDate = longDateText(data.contractDate);
@@ -2497,44 +2522,67 @@ async function buildInvoiceContractDocxBlob(data) {
 
   documentXml = replaceParagraphByPredicate(
     documentXml,
-    (text) => text.startsWith("Счет-договор на выполнение работ"),
-    `Счет-договор на выполнение работ и/или услуг № ${data.contractNumber} от ${longDate} г.`,
+    (text) => text.startsWith("Счет-договор на выполнение работ") || text.startsWith("Счет-договор на проведение замерных работ"),
+    isMeasurement
+      ? `Счет-договор на проведение замерных работ № ${data.contractNumber} от ${longDate} г.`
+      : `Счет-договор на выполнение работ и/или услуг № ${data.contractNumber} от ${longDate} г.`,
   );
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Исполнитель:"), invoiceSellerIntro(data.seller));
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("Балашиха") && text.includes("Мирской"), "");
-  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.includes("\u041a\u041f\u041f 771801001") || (text.includes("\u0418\u041f \u041a\u0423\u041f\u041e\u0420\u041e\u0412\u0410") && text.includes("\u0418\u041d\u041d")), contractor.name, { bold: true, removeRightIndent: true });
+  documentXml = replaceParagraphByPredicate(
+    documentXml,
+    (text) =>
+      text.includes("\u041a\u041f\u041f 771801001") ||
+      text.includes("ОГРНИП 320508100357479") ||
+      (text.includes("ИП Купорова") && text.includes("ИНН")) ||
+      (text.includes("\u0418\u041f \u041a\u0423\u041f\u041e\u0420\u041e\u0412\u0410") && text.includes("\u0418\u041d\u041d")),
+    contractor.name,
+    { bold: true, removeRightIndent: true },
+  );
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Адрес:"), contractor.address);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Email:"), contractor.email);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("В ООО") || text.startsWith("В "), contractor.bank);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("К/С"), contractor.correspondent);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("БИК:") && text.includes("044525104"), contractor.bik);
-  documentXml = replaceParagraphByPredicateWithLeadingBreaks(documentXml, (text) => text.includes('"ИНТЕКТЕХНО"'), customer.name);
-  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Юр. Адрес:"), customer.address);
-  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("ИНН:") && text.includes("7718214883"), customer.inn);
+  documentXml = replaceParagraphByPredicateWithLeadingBreaks(documentXml, (text) => text.includes('"ИНТЕКТЕХНО"') || text.includes('"ЛАЙНКОМ"'), customer.name);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Юр. Адрес:") || text.startsWith("Юр. адрес:"), customer.address);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("ИНН:") && (text.includes("7718214883") || text.includes("7716186454")), customer.inn);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("ОГРН:"), customer.ogrn);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("р/с:"), customer.account);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("БИК:") && text.includes("044525685"), customer.bik);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("к/с:"), customer.correspondent);
-  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Адрес доставки и установки:"), `Адрес доставки и установки: ${data.workAddress || "не указан"}`);
-  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Оплата настоящего Счет-Договора производится"), invoicePaymentTermsText(data));
   documentXml = replaceParagraphByPredicate(
     documentXml,
-    (text) => text.startsWith("Поставщик обязан доставить"),
-    `Поставщик обязан доставить (отгрузить) оплаченный товар и передать его Заказчику в течение ${workDaysText(data.workDays)} рабочих дней с момента зачисления оплаты на расчетный счет Поставщика и согласования макета Сторонами.`,
+    (text) => text.startsWith("Адрес доставки и установки:") || text.startsWith("Адрес проведения работ:"),
+    `${isMeasurement ? "Адрес проведения работ" : "Адрес доставки и установки"}: ${data.workAddress || "не указан"}`,
+  );
+  documentXml = replaceParagraphByPredicate(
+    documentXml,
+    (text) => text.startsWith("Оплата настоящего Счет-Договора производится") || text.startsWith("Оплата настоящего Счет-договора производится"),
+    isMeasurement ? measurementInvoicePaymentTermsText(data) : invoicePaymentTermsText(data),
+  );
+  documentXml = replaceParagraphByPredicate(
+    documentXml,
+    (text) => text.startsWith("Поставщик обязан доставить") || text.startsWith("Срок выполнения работ -"),
+    isMeasurement
+      ? `Срок выполнения работ - до ${workDaysText(data.workDays)} рабочих дней с даты поступления оплаты и предоставления доступа к объекту.`
+      : `Поставщик обязан доставить (отгрузить) оплаченный товар и передать его Заказчику в течение ${workDaysText(data.workDays)} рабочих дней с момента зачисления оплаты на расчетный счет Поставщика и согласования макета Сторонами.`,
   );
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Гарантия на поставляемый товар составляет"), `Гарантия на поставляемый товар составляет ${data.warranty} с даты поставки товара.`);
   documentXml = replaceParagraphByPredicate(
     documentXml,
-    (text) => text.startsWith("Приложение №1 К Счет-договору"),
-    `Приложение №1 К Счет-договору на поставку товара № ${data.contractNumber} от ${longDate} г.`,
+    (text) => text.startsWith("Приложение №1 К Счет-договору") || text.startsWith("Приложение №1 к Счет-договору"),
+    isMeasurement
+      ? `Приложение №1 к Счет-договору на проведение замерных работ № ${data.contractNumber} от ${longDate} г.`
+      : `Приложение №1 К Счет-договору на поставку товара № ${data.contractNumber} от ${longDate} г.`,
   );
   documentXml = replaceAfterParagraphUntilNextTableWithXml(
     documentXml,
-    (text) => text.includes("Описание конструкции:"),
-    `${technicalBlockXml(data, imageFiles)}${blankParagraphs(3)}`,
+    (text) => text.includes("Описание конструкции:") || text.includes("Описание работ:"),
+    isMeasurement ? measurementTechnicalBlockXml(data, imageFiles) : `${technicalBlockXml(data, imageFiles)}${blankParagraphs(3)}`,
   );
   documentXml = updateTableAt(documentXml, 0, (table) => updateInvoiceBankTable(table, data));
-  documentXml = updateTableAt(documentXml, 1, (table) => updateInvoiceItemsTable(table, data));
+  documentXml = updateTableAt(documentXml, 1, (table) => updateInvoiceItemsTable(table, data, { unitLabel: isMeasurement ? "компл." : "шт" }));
   documentXml = updateTableAt(documentXml, 2, (table) => updateInvoiceSignatureTable(table, data, signatureSealFiles, 0));
   documentXml = updateTableAt(documentXml, 3, (table) => updateInvoiceSignatureTable(table, data, signatureSealFiles, 1));
 
@@ -2550,6 +2598,19 @@ async function buildInvoiceContractDocxBlob(data) {
   replaceFile(files, "word/_rels/document.xml.rels", relsXml);
   replaceFile(files, "[Content_Types].xml", contentTypesXml);
   return makeZip(files);
+}
+
+function buildMeasurementInvoiceContractDocxBlob(data) {
+  return buildInvoiceContractDocxBlob(data, {
+    kind: "measurement",
+    templateUrl: "schet_dogovor_zamery_template.docx",
+    imageRelPrefix: "rIdMeasurementInvoiceMockup",
+    imageFilePrefix: "measurement-invoice-mockup",
+    imageIdOffset: 60,
+    signatureRelPrefix: "rIdMeasurementInvoiceSignature",
+    signatureFilePrefix: "measurement-invoice-signature-seal",
+    signatureIdOffset: 160,
+  });
 }
 
 async function buildStandaloneInvoiceDocxBlob(data) {
@@ -2586,12 +2647,14 @@ async function buildStandaloneInvoiceDocxBlob(data) {
 function contractDownloadName(data) {
   const number = data.contractNumber || "без номера";
   if (data.documentTemplate === "invoiceContract") return `Счет-договор №${number}.docx`;
+  if (data.documentTemplate === "measurementInvoiceContract") return `Счет-договор на замер №${number}.docx`;
   if (data.documentTemplate === "invoice") return `Счет на оплату №${number}.docx`;
   return `Договор №${number} с приложением.docx`;
 }
 
 function buildSelectedDocxBlob(data) {
   if (data.documentTemplate === "invoiceContract") return buildInvoiceContractDocxBlob(data);
+  if (data.documentTemplate === "measurementInvoiceContract") return buildMeasurementInvoiceContractDocxBlob(data);
   if (data.documentTemplate === "invoice") return buildStandaloneInvoiceDocxBlob(data);
   return buildTemplateDocxBlob(data);
 }
