@@ -3,13 +3,48 @@ const GITHUB_REPO = "manager-web-app";
 const GITHUB_BRANCH = "main";
 const GITHUB_REGISTRY_PATH = "templates/contracts-registry.json";
 const GITHUB_CONTENTS_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_REGISTRY_PATH}`;
+const ALLOWED_CORS_HOSTS = new Set(["manager-web-app.pages.dev", "raw.githack.com", "rawcdn.githack.com"]);
 
-function json(payload, status = 200) {
+function allowedOrigin(request) {
+  const origin = request.headers.get("Origin");
+  if (!origin) return "";
+
+  try {
+    const originUrl = new URL(origin);
+    const requestUrl = new URL(request.url);
+    if (
+      originUrl.host === requestUrl.host ||
+      originUrl.host.endsWith(".manager-web-app.pages.dev") ||
+      ALLOWED_CORS_HOSTS.has(originUrl.host)
+    ) {
+      return originUrl.origin;
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
+function corsHeaders(request) {
+  const origin = allowedOrigin(request);
+  if (!origin) return {};
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
+  };
+}
+
+function json(payload, status = 200, request = null) {
   return new Response(JSON.stringify(payload), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
+      ...(request ? corsHeaders(request) : {}),
     },
   });
 }
@@ -119,24 +154,24 @@ async function saveGitHubRegistry(records, sha, token) {
 function assertSameOrigin(request) {
   const origin = request.headers.get("Origin");
   if (!origin) return true;
-  return new URL(origin).host === new URL(request.url).host;
+  return Boolean(allowedOrigin(request));
 }
 
 export async function onRequest({ request, env }) {
-  if (request.method === "OPTIONS") return json({});
+  if (request.method === "OPTIONS") return json({}, 200, request);
 
   if (request.method === "GET") {
     const token = env.GITHUB_TOKEN || env.GH_TOKEN || "";
     const github = await loadGitHubRegistry(token);
-    return json(github.records);
+    return json(github.records, 200, request);
   }
 
-  if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
-  if (!assertSameOrigin(request)) return json({ error: "Forbidden origin" }, 403);
+  if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, request);
+  if (!assertSameOrigin(request)) return json({ error: "Forbidden origin" }, 403, request);
 
   const token = env.GITHUB_TOKEN || env.GH_TOKEN || "";
   if (!token) {
-    return json({ error: "Cloudflare variable GITHUB_TOKEN is not configured" }, 501);
+    return json({ error: "Cloudflare variable GITHUB_TOKEN is not configured" }, 501, request);
   }
 
   const payload = await request.json().catch(() => ({}));
@@ -149,13 +184,13 @@ export async function onRequest({ request, env }) {
 
     try {
       await saveGitHubRegistry(records, github.sha, token);
-      return json(records);
+      return json(records, 200, request);
     } catch (error) {
       if (!String(error.message || "").includes("sha") || attempt === 2) {
-        return json({ error: error.message || "Registry update failed" }, 500);
+        return json({ error: error.message || "Registry update failed" }, 500, request);
       }
     }
   }
 
-  return json({ error: "Registry update failed" }, 500);
+  return json({ error: "Registry update failed" }, 500, request);
 }

@@ -6,6 +6,7 @@
   const GITHUB_RAW_REGISTRY_URL = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${GITHUB_REGISTRY_PATH}`;
   const GITHUB_CONTENTS_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_REGISTRY_PATH}`;
   const SERVER_REGISTRY_URL = "/api/contracts-registry";
+  const CLOUDFLARE_REGISTRY_URL = "https://manager-web-app.pages.dev/api/contracts-registry";
   const LOCAL_KEY = "managerContractsRegistry";
   const SELECTED_CONTRACT_KEY = "managerContractFromRegistry";
   const TOKEN_KEY = "contractRegistryGitHubToken";
@@ -84,6 +85,11 @@
     return ["127.0.0.1", "localhost"].includes(window.location.hostname);
   }
 
+  function serverRegistryUrl() {
+    if (isLocalAppServer() || window.location.hostname.endsWith(".pages.dev")) return SERVER_REGISTRY_URL;
+    return CLOUDFLARE_REGISTRY_URL;
+  }
+
   function utf8ToBase64(value) {
     const bytes = new TextEncoder().encode(value);
     const chunkSize = 0x8000;
@@ -128,14 +134,14 @@
 
   async function loadServerRegistry() {
     if (!canUseServerRegistry()) throw new Error("Server registry is not available.");
-    const response = await fetch(cacheBusted(SERVER_REGISTRY_URL), { cache: "no-store" });
+    const response = await fetch(cacheBusted(serverRegistryUrl()), { cache: "no-store" });
     if (!response.ok) throw new Error("Не удалось прочитать общий реестр.");
     return normalizeRecords(await response.json());
   }
 
   async function updateServerRegistry(payload) {
     if (!canUseServerRegistry()) throw new Error("Server registry is not available.");
-    const response = await fetch(SERVER_REGISTRY_URL, {
+    const response = await fetch(serverRegistryUrl(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
