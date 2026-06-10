@@ -90,8 +90,10 @@ function render() {
 
 async function loadRecords() {
   try {
-    setStatus("Загружаю реестр...");
-    records = await window.ContractRegistry.loadRegistry();
+    setStatus(isAdmin ? "Загружаю общий реестр..." : "Загружаю локальный реестр...");
+    records = isAdmin
+      ? await window.ContractRegistry.loadRegistry({ includeShared: true, cache: false })
+      : window.ContractRegistry.getLocalRecords();
     render();
     setStatus(records.length ? `Загружено договоров: ${records.length}` : "Реестр пуст.");
   } catch {
@@ -108,7 +110,7 @@ function openRecord(number) {
   window.open("index.html?v=20260606-registry-1", "_blank", "noopener");
 }
 
-function login() {
+async function login() {
   const loginValue = loginInput.value.trim();
   const passwordValue = passwordInput.value;
   if (loginValue !== ADMIN_LOGIN || passwordValue !== ADMIN_PASSWORD) {
@@ -119,13 +121,13 @@ function login() {
   isAdmin = true;
   sessionStorage.setItem("contractsRegistryAdmin", "true");
   passwordInput.value = "";
-  render();
+  await loadRecords();
 }
 
 function logout() {
   isAdmin = false;
   sessionStorage.removeItem("contractsRegistryAdmin");
-  render();
+  loadRecords();
 }
 
 async function deleteRecord(number) {

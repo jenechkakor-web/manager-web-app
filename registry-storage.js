@@ -5,6 +5,7 @@
   const GITHUB_REGISTRY_PATH = "templates/contracts-registry.json";
   const GITHUB_RAW_REGISTRY_URL = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${GITHUB_REGISTRY_PATH}`;
   const GITHUB_CONTENTS_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_REGISTRY_PATH}`;
+  const SERVER_REGISTRY_URL = "/api/contracts-registry";
   const LOCAL_KEY = "managerContractsRegistry";
   const SELECTED_CONTRACT_KEY = "managerContractFromRegistry";
   const TOKEN_KEY = "contractRegistryGitHubToken";
@@ -121,6 +122,31 @@
     return { records, sha: file.sha };
   }
 
+  function canUseServerRegistry() {
+    return ["http:", "https:"].includes(window.location.protocol);
+  }
+
+  async function loadServerRegistry() {
+    if (!canUseServerRegistry()) throw new Error("Server registry is not available.");
+    const response = await fetch(cacheBusted(SERVER_REGISTRY_URL), { cache: "no-store" });
+    if (!response.ok) throw new Error("Не удалось прочитать общий реестр.");
+    return normalizeRecords(await response.json());
+  }
+
+  async function updateServerRegistry(payload) {
+    if (!canUseServerRegistry()) throw new Error("Server registry is not available.");
+    const response = await fetch(SERVER_REGISTRY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const details = await response.json().catch(() => ({}));
+      throw new Error(details.error || "Не удалось обновить общий реестр.");
+    }
+    return normalizeRecords(await response.json());
+  }
+
   async function loadPublicRegistrySources() {
     const endpoints = [cacheBusted(`templates/contracts-registry.json`), cacheBusted(GITHUB_RAW_REGISTRY_URL)];
     if (isLocalAppServer()) endpoints.unshift(cacheBusted("/api/contracts-registry"));
@@ -140,21 +166,34 @@
 
   async function loadRegistry(options = {}) {
     const token = options.token || registryToken();
+    const includeShared = options.includeShared !== false;
+    const includeServer = options.includeServer !== false;
+    const cacheResult = options.cache !== false;
     const sources = [getLocalRecords()];
 
-    if (token) {
-      try {
-        const github = await loadGitHubRegistry(token);
-        sources.push(github.records);
-      } catch {
+    if (includeShared) {
+      if (includeServer) {
+        try {
+          sources.push(await loadServerRegistry());
+        } catch {
+          // Fall back to GitHub/raw sources below.
+        }
+      }
+
+      if (token) {
+        try {
+          const github = await loadGitHubRegistry(token);
+          sources.push(github.records);
+        } catch {
+          sources.push(...(await loadPublicRegistrySources()));
+        }
+      } else {
         sources.push(...(await loadPublicRegistrySources()));
       }
-    } else {
-      sources.push(...(await loadPublicRegistrySources()));
     }
 
     const records = mergeRecords(...sources);
-    setLocalRecords(records);
+    if (cacheResult) setLocalRecords(records);
     return records;
   }
 
@@ -195,25 +234,37 @@
     const localRecords = upsertInto(getLocalRecords(), normalized);
     setLocalRecords(localRecords);
 
+    try {
+      await updateServerRegistry({ action: "upsert", record: normalized });
+      return { records: localRecords, remoteSaved: true };
+    } catch {
+      // If the shared API is not configured, keep the local record and try the legacy GitHub token path.
+    }
+
     const token = options.token || registryToken();
     if (!token) return { records: localRecords, remoteSaved: false };
 
-    const records = upsertInto(await loadRegistry({ token }), normalized);
+    const records = upsertInto(await loadRegistry({ token, includeServer: false }), normalized);
     await saveGitHubRegistry(records, token);
-    setLocalRecords(records);
-    return { records, remoteSaved: true };
+    return { records: localRecords, remoteSaved: true };
   }
 
   async function deleteRecord(number, options = {}) {
     const localRecords = removeFrom(getLocalRecords(), number);
     setLocalRecords(localRecords);
 
+    try {
+      const records = await updateServerRegistry({ action: "delete", number });
+      return { records, remoteSaved: true };
+    } catch {
+      // If the shared API is not configured, keep deleting locally and try the legacy GitHub token path.
+    }
+
     const token = options.token || registryToken();
     if (!token) return { records: localRecords, remoteSaved: false };
 
-    const records = removeFrom(await loadRegistry({ token }), number);
+    const records = removeFrom(await loadRegistry({ token, includeServer: false }), number);
     await saveGitHubRegistry(records, token);
-    setLocalRecords(records);
     return { records, remoteSaved: true };
   }
 
