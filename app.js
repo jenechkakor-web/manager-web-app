@@ -1194,6 +1194,20 @@ function invoiceCustomerLines(data) {
   };
 }
 
+function normalizeRequisitesText(value) {
+  return String(value || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[«»]/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isSellerBankLine(text, seller) {
+  const value = normalizeRequisitesText(text).toLowerCase();
+  const bank = normalizeRequisitesText(seller.bankName).toLowerCase();
+  return value.startsWith("в ") && (value.includes(bank) || (value.includes("банк точка") && bank.includes("банк точка")));
+}
+
 function invoicePaymentTermsText(data) {
   const percent = Number(data.paymentTerms) || 0;
   const total = data.totals.grandTotal;
@@ -2545,7 +2559,7 @@ async function buildInvoiceContractDocxBlob(data, options = {}) {
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Адрес:"), contractor.address);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Email:"), contractor.email);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => /^Р\/С\s*№/i.test(text), contractor.account);
-  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("В ООО") || text.startsWith("В "), contractor.bank);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => isSellerBankLine(text, data.seller), contractor.bank);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("К/С"), contractor.correspondent);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("БИК:") && text.includes("044525104"), contractor.bik);
   documentXml = replaceParagraphByPredicateWithLeadingBreaks(documentXml, (text) => text.includes('"ИНТЕКТЕХНО"') || text.includes('"ЛАЙНКОМ"'), customer.name);
@@ -2562,7 +2576,7 @@ async function buildInvoiceContractDocxBlob(data, options = {}) {
   );
   documentXml = replaceParagraphByPredicate(
     documentXml,
-    (text) => /^в\s+(ПАО|АО|ООО|Банк)/i.test(text.trim()) && !text.includes(data.seller.bankName),
+    (text) => /^в\s+(ПАО|АО|ООО|Банк)/i.test(text.trim()) && !isSellerBankLine(text, data.seller),
     customer.bank,
   );
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.trim().startsWith("БИК:") && !text.includes(data.seller.bankBik), customer.bik);
