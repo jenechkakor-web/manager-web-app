@@ -5,11 +5,11 @@
     "counterparty": "ООО \"ЛВТ КОМПЛЕКС\"",
     "amount": 95800,
     "status": "exported",
-    "updatedAt": "2026-06-11T18:27:22.099Z",
+    "updatedAt": "2026-06-11T18:51:27.931Z",
     "data": {
       "contractNumber": "16896",
       "contractDate": "2026-06-08",
-      "documentTemplate": "invoiceContract",
+      "documentTemplate": "contract",
       "sellerKey": "ooo",
       "seller": {
         "title": "ООО Веркуп",
