@@ -1160,7 +1160,8 @@ function invoiceContractorLines(data) {
     name: `${displayName}
 ${registrationLines.join("\n")}`,
     address: `Адрес: ${sellerAddress(seller)}${seller.phone ? `\nТ. ${seller.phone}` : ""}`,
-    email: `${seller.email ? `Email: ${seller.email} ` : ""}Р/С № ${seller.checkingAccount}`,
+    email: seller.email ? `Email: ${seller.email}` : "",
+    account: `Р/С № ${seller.checkingAccount}`,
     bank: `В ${seller.bankName}`,
     correspondent: `К/С № ${seller.correspondentAccount}`,
     bik: `БИК: ${seller.bankBik}`,
@@ -1174,9 +1175,10 @@ function invoiceCustomerLines(data) {
       address: data.customer.address ? `Юр. Адрес: ${data.customer.address}` : "Юр. Адрес:",
       inn: `ИНН: ${data.customer.inn || ""}${data.customer.kpp ? ` КПП: ${data.customer.kpp}` : ""}`,
       ogrn: `ОГРН: ${data.customer.ogrn || ""}`,
-      account: "р/с:",
-      bik: "БИК:",
-      correspondent: "к/с:",
+      account: "",
+      bank: "",
+      bik: "",
+      correspondent: "",
     };
   }
 
@@ -1186,6 +1188,7 @@ function invoiceCustomerLines(data) {
     inn: data.customer.passport ? `Паспорт: ${data.customer.passport}` : "Паспорт:",
     ogrn: "",
     account: "",
+    bank: "",
     bik: "",
     correspondent: "",
   };
@@ -2541,6 +2544,7 @@ async function buildInvoiceContractDocxBlob(data, options = {}) {
   );
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Адрес:"), contractor.address);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Email:"), contractor.email);
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => /^Р\/С\s*№/i.test(text), contractor.account);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("В ООО") || text.startsWith("В "), contractor.bank);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("К/С"), contractor.correspondent);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("БИК:") && text.includes("044525104"), contractor.bik);
@@ -2548,9 +2552,25 @@ async function buildInvoiceContractDocxBlob(data, options = {}) {
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("Юр. Адрес:") || text.startsWith("Юр. адрес:"), customer.address);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("ИНН:") && (text.includes("7718214883") || text.includes("7716186454")), customer.inn);
   documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("ОГРН:"), customer.ogrn);
-  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("р/с:"), customer.account);
-  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("БИК:") && text.includes("044525685"), customer.bik);
-  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.startsWith("к/с:"), customer.correspondent);
+  documentXml = replaceParagraphByPredicate(
+    documentXml,
+    (text) => {
+      const value = text.trim();
+      return value.startsWith("р/с:") && (/в\s+/i.test(value) || value.includes("СДМ-Банк"));
+    },
+    customer.account,
+  );
+  documentXml = replaceParagraphByPredicate(
+    documentXml,
+    (text) => /^в\s+(ПАО|АО|ООО|Банк)/i.test(text.trim()) && !text.includes(data.seller.bankName),
+    customer.bank,
+  );
+  documentXml = replaceParagraphByPredicate(documentXml, (text) => text.trim().startsWith("БИК:") && !text.includes(data.seller.bankBik), customer.bik);
+  documentXml = replaceParagraphByPredicate(
+    documentXml,
+    (text) => text.trim().startsWith("к/с:") && !text.includes(data.seller.correspondentAccount),
+    customer.correspondent,
+  );
   documentXml = replaceParagraphByPredicate(
     documentXml,
     (text) => text.startsWith("Адрес доставки и установки:") || text.startsWith("Адрес проведения работ:"),
