@@ -183,6 +183,20 @@ function isLocalAppServer() {
   return ["127.0.0.1", "localhost"].includes(window.location.hostname);
 }
 
+function repositoryAssetUrl(path) {
+  const value = String(path || "");
+  if (/^(https?:|data:|blob:)/i.test(value)) return value;
+  const cleanPath = value.replace(/^\.?\//, "");
+  if (window.location.hostname === "raw.githack.com") {
+    return `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${cleanPath}`;
+  }
+  return value;
+}
+
+function fetchRepositoryAsset(path, options = {}) {
+  return fetch(repositoryAssetUrl(path), options);
+}
+
 function techPresetEndpoints() {
   const endpoints = [cacheBusted("templates/tech-presets.json"), cacheBusted(GITHUB_RAW_PRESETS_URL)];
   if (isLocalAppServer()) endpoints.unshift(cacheBusted("/api/tech-presets"));
@@ -1959,7 +1973,7 @@ async function loadSellerSignatureSealFiles(data, options = {}) {
   const loaded = await Promise.all(
     entries.map(async (entry, index) => {
       try {
-        const response = await fetch(entry.path, { cache: "no-store" });
+        const response = await fetchRepositoryAsset(entry.path, { cache: "no-store" });
         if (!response.ok) return null;
         const blob = await response.blob();
         const src = await blobToDataUrl(blob);
@@ -2449,7 +2463,7 @@ function templateSignaturesTable(data) {
 }
 
 async function buildTemplateDocxBlob(data) {
-  const response = await fetch("dogovor_final.docx");
+  const response = await fetchRepositoryAsset("dogovor_final.docx", { cache: "no-store" });
   if (!response.ok) throw new Error("Template not found");
   const files = await unzipDocx(await response.arrayBuffer());
   const imageFiles = createImageFilesFromBlocks(data, {
@@ -2518,7 +2532,7 @@ async function buildTemplateDocxBlob(data) {
 
 async function buildInvoiceContractDocxBlob(data, options = {}) {
   const isMeasurement = options.kind === "measurement";
-  const response = await fetch(options.templateUrl || "schet_dogovor_template.docx");
+  const response = await fetchRepositoryAsset(options.templateUrl || "schet_dogovor_template.docx", { cache: "no-store" });
   if (!response.ok) throw new Error("Template not found");
   const files = await unzipDocx(await response.arrayBuffer());
   const imageFiles = createImageFilesFromBlocks(data, {
@@ -2648,7 +2662,7 @@ function buildMeasurementInvoiceContractDocxBlob(data) {
 }
 
 async function buildStandaloneInvoiceDocxBlob(data) {
-  const response = await fetch("invoice_template.docx");
+  const response = await fetchRepositoryAsset("invoice_template.docx", { cache: "no-store" });
   if (!response.ok) throw new Error("Invoice template not found");
   const files = await unzipDocx(await response.arrayBuffer());
   const signatureSealFiles = await loadSellerSignatureSealFiles(data, {
