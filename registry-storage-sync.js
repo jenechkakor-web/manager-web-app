@@ -85,6 +85,33 @@
     return ["127.0.0.1", "localhost"].includes(window.location.hostname);
   }
 
+  function installRawGitHackAssetFetchFallback() {
+    if (window.location.hostname !== "raw.githack.com" || window.__repoAssetFetchFallbackInstalled) return;
+    const originalFetch = window.fetch.bind(window);
+    const repositoryPathPrefix = `/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/`;
+    const assetPattern =
+      /(?:^|\/)(?:dogovor_final|schet_dogovor_template|schet_dogovor_zamery_template|invoice_template)\.docx$|\/assets\/[^?#]+\.(?:png|jpe?g|webp)$/i;
+
+    function redirectedAssetUrl(input) {
+      const inputUrl = typeof input === "string" || input instanceof URL ? String(input) : input?.url;
+      if (!inputUrl) return "";
+      const url = new URL(inputUrl, window.location.href);
+      if (url.origin !== window.location.origin || !assetPattern.test(url.pathname)) return "";
+      const pathStart = url.pathname.indexOf(repositoryPathPrefix);
+      if (pathStart === -1) return "";
+      const repositoryPath = url.pathname.slice(pathStart + repositoryPathPrefix.length);
+      return `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${repositoryPath}`;
+    }
+
+    window.fetch = (input, init) => {
+      const redirectedUrl = redirectedAssetUrl(input);
+      return originalFetch(redirectedUrl || input, init);
+    };
+    window.__repoAssetFetchFallbackInstalled = true;
+  }
+
+  installRawGitHackAssetFetchFallback();
+
   function serverRegistryUrl() {
     if (isLocalAppServer() || window.location.hostname.endsWith(".pages.dev")) return SERVER_REGISTRY_URL;
     return CLOUDFLARE_REGISTRY_URL;
