@@ -4,8 +4,8 @@
     "date": "2026-06-08",
     "counterparty": "Алексей",
     "amount": 95800,
-    "status": "exported",
-    "updatedAt": "2026-06-15T12:15:56.128Z",
+    "status": "draft",
+    "updatedAt": "2026-06-15T12:16:07.613Z",
     "data": {
       "contractNumber": "24",
       "contractDate": "2026-06-08",
