@@ -84,6 +84,7 @@ const GITHUB_REPO = "manager-web-app";
 const GITHUB_BRANCH = "main";
 const GITHUB_PRESETS_PATH = "templates/tech-presets.json";
 const GITHUB_RAW_PRESETS_URL = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${GITHUB_PRESETS_PATH}`;
+const DRAFT_REGISTRY_NUMBER_KEY = "managerAnonymousDraftRegistryNumber";
 
 const WORD_PAGE_WIDTH = 12240;
 const WORD_PAGE_HEIGHT = 15840;
@@ -2707,22 +2708,69 @@ function buildSelectedDocxBlob(data) {
   return buildTemplateDocxBlob(data);
 }
 
-async function saveContractRegistryEntry(data, status) {
-  if (!window.ContractRegistry || !data.contractNumber) return { skipped: true };
-  const record = window.ContractRegistry.recordFromContractData(data, status);
+function createAnonymousDraftRegistryNumber() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  const stamp = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  return `Черновик без номера ${stamp}`;
+}
+
+function anonymousDraftRegistryNumber() {
+  const existing = localStorage.getItem(DRAFT_REGISTRY_NUMBER_KEY);
+  if (existing) return existing;
+  const number = createAnonymousDraftRegistryNumber();
+  localStorage.setItem(DRAFT_REGISTRY_NUMBER_KEY, number);
+  return number;
+}
+
+async function clearAnonymousDraftRegistryRecord(actualNumber) {
+  const anonymousNumber = localStorage.getItem(DRAFT_REGISTRY_NUMBER_KEY);
+  if (!anonymousNumber || anonymousNumber === actualNumber || !window.ContractRegistry) return;
+
+  try {
+    await window.ContractRegistry.deleteRecord(anonymousNumber, {
+      token: window.ContractRegistry.registryToken(),
+    });
+  } catch {
+    // The real numbered record is already saved; stale local anonymous drafts should not block the user.
+  }
+  localStorage.removeItem(DRAFT_REGISTRY_NUMBER_KEY);
+}
+
+async function saveContractRegistryEntry(data, status, options = {}) {
+  if (!window.ContractRegistry) return { skipped: true };
+  const registryNumber = options.number || data.contractNumber;
+  let record = window.ContractRegistry.recordFromContractData(data, status, {
+    number: options.number,
+  });
+  if (!record && registryNumber) {
+    const amount = Number(data?.totals?.grandTotal ?? 0);
+    record = {
+      number: registryNumber,
+      date: data.contractDate,
+      counterparty: data.customer?.name || data.customer?.inn || "",
+      amount: Number.isFinite(amount) ? amount : 0,
+      status,
+      updatedAt: new Date().toISOString(),
+      data,
+    };
+  }
   if (!record) return { skipped: true };
-  return window.ContractRegistry.upsertRecord(record, {
+  const result = await window.ContractRegistry.upsertRecord(record, {
     token: window.ContractRegistry.registryToken(),
   });
+  if (data.contractNumber) await clearAnonymousDraftRegistryRecord(data.contractNumber);
+  return result;
 }
 
 async function saveDraft() {
   const data = collectData();
   localStorage.setItem("managerContractDraft", JSON.stringify(data));
   localStorage.setItem("dadataToken", getField("dadataToken").value);
+  const registryNumber = data.contractNumber || anonymousDraftRegistryNumber();
   try {
-    await saveContractRegistryEntry(data, "draft");
-    alert(data.contractNumber ? "Черновик сохранен и добавлен в реестр." : "Черновик сохранен. Для записи в реестр нужен номер договора.");
+    await saveContractRegistryEntry(data, "draft", { number: registryNumber });
+    alert(data.contractNumber ? "Черновик сохранен и добавлен в реестр." : `Черновик сохранен и добавлен в реестр как «${registryNumber}».`);
   } catch {
     alert("Черновик сохранен локально, но реестр не обновился.");
   }

@@ -301,8 +301,8 @@
     return { records, remoteSaved: true };
   }
 
-  function recordFromContractData(data, status) {
-    const number = normalizeContractNumber(data?.contractNumber);
+  function recordFromContractData(data, status, options = {}) {
+    const number = normalizeContractNumber(options.number || data?.contractNumber);
     if (!number) return null;
     const amount = Number(data?.totals?.grandTotal ?? 0);
     return normalizeRecord({
