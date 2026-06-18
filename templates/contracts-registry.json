@@ -1,5 +1,114 @@
 [
   {
+    "number": "0000",
+    "date": "2026-06-17",
+    "counterparty": "ООО \"ЛАРЕДО\"",
+    "amount": 3267700,
+    "status": "draft",
+    "updatedAt": "2026-06-18T13:00:11.876Z",
+    "data": {
+      "contractNumber": "0000",
+      "contractDate": "2026-06-17",
+      "documentTemplate": "contract",
+      "sellerKey": "ip",
+      "seller": {
+        "title": "ИП Купорова",
+        "fullName": "Индивидуальный предприниматель Купорова Евгения Александровна",
+        "vatRate": 0.05,
+        "vatLabel": "НДС 5%",
+        "inn": "500805209810",
+        "ogrn": "320508100357479",
+        "ogrnLabel": "ОГРНИП",
+        "legalAddress": "143930 МО, г. Балашиха, Мирской пр-д, 9",
+        "phone": "8 (909) 655-98-48",
+        "email": "kuporov.biz@yandex.ru",
+        "checkingAccount": "40802810320000702819",
+        "bankName": "ООО \"Банк Точка\"",
+        "bankInn": "9721194461",
+        "correspondentAccount": "30101810745374525104",
+        "bankBik": "044525104",
+        "bankAddress": "109044, Российская Федерация, г. Москва, вн.тер.г. муниципальный округ Южнопортовый, пер. 3-й Крутицкий, д.11, помещ. 7Н"
+      },
+      "customerType": "legal",
+      "customer": {
+        "type": "Юридическое лицо",
+        "inn": "7718608775",
+        "kpp": "771801001",
+        "name": "ООО \"ЛАРЕДО\"",
+        "address": "107113, г Москва, р-н Сокольники, ул Лобачика, д 17",
+        "ogrn": "1067758525230",
+        "director": "Кудаков Сергей Юрьевич"
+      },
+      "paymentTerms": "70",
+      "finalPaymentTiming": "afterUpd",
+      "warranty": "20 месяцев",
+      "addSignatureSeal": false,
+      "workDays": "20",
+      "workAddress": "г. Москва, парк Сокольники",
+      "technicalBlocks": [],
+      "technicalDescriptions": [],
+      "technicalDescription": "",
+      "requestLibraryAdd": false,
+      "items": [
+        {
+          "number": 1,
+          "name": "Фотозона",
+          "qty": 1,
+          "price": 1556000,
+          "sum": 1556000
+        },
+        {
+          "number": 2,
+          "name": "Разработка проектно-конструкторской документации",
+          "qty": 1,
+          "price": 94000,
+          "sum": 94000
+        },
+        {
+          "number": 3,
+          "name": "Оформление аттракциона \"Бассейн\"",
+          "qty": 1,
+          "price": 485000,
+          "sum": 485000
+        },
+        {
+          "number": 4,
+          "name": "Оформление аттракциона \"Самолетики\"",
+          "qty": 1,
+          "price": 339900,
+          "sum": 339900
+        },
+        {
+          "number": 5,
+          "name": "Оформление аттракциона \"Айсберг\"",
+          "qty": 1,
+          "price": 98800,
+          "sum": 98800
+        },
+        {
+          "number": 6,
+          "name": "Оформление аттракциона \"Качели\"",
+          "qty": 1,
+          "price": 120000,
+          "sum": 120000
+        },
+        {
+          "number": 7,
+          "name": "Доставка, монтажные работы",
+          "qty": 1,
+          "price": 574000,
+          "sum": 574000
+        }
+      ],
+      "totals": {
+        "totalWithoutVat": 3112095.238095238,
+        "vat": 155604.7619047619,
+        "grandTotal": 3267700
+      },
+      "mockups": []
+    }
+  },
+  {
     "number": "17064",
     "date": "2026-06-18",
     "counterparty": "ООО \"ЧЕПАЛГ\"",
