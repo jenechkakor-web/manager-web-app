@@ -50,7 +50,7 @@ jobs:
           cp dogovor_final.docx invoice_template.docx deploy/
           cp schet_dogovor_template.docx schet_dogovor_zamery_template.docx deploy/
           cp -R assets/. deploy/assets/
-          cp api/.htaccess api/config.php api/config.local.example.php api/index.php deploy/api/
+          cp api/.htaccess api/config.php api/config.local.example.php api/index.php api/runtime.php deploy/api/
           cp templates/tech-presets.json deploy/templates/
           cp templates/contracts-registry.json deploy/templates/
 
