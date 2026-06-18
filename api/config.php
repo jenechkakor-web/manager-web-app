@@ -1,5 +1,4 @@
 <?php
-declare(strict_types=1);
 
 $localConfigPath = __DIR__ . '/config.local.php';
 if (!is_file($localConfigPath)) {

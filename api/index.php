@@ -1,18 +1,17 @@
 <?php
-declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 
-function respond($payload, int $status = 200): void
+function respond($payload, $status = 200)
 {
     http_response_code($status);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 
-function request_json(): array
+function request_json()
 {
     $raw = file_get_contents('php://input');
     if ($raw === false || trim($raw) === '') {
@@ -25,20 +24,21 @@ function request_json(): array
     return $decoded;
 }
 
-function require_same_origin(): void
+function require_same_origin()
 {
-    $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? '');
+    $origin = isset($_SERVER['HTTP_ORIGIN']) ? (string) $_SERVER['HTTP_ORIGIN'] : '';
     if ($origin === '') {
         return;
     }
     $originHost = parse_url($origin, PHP_URL_HOST);
-    $requestHost = explode(':', (string) ($_SERVER['HTTP_HOST'] ?? ''))[0];
+    $requestHostParts = explode(':', isset($_SERVER['HTTP_HOST']) ? (string) $_SERVER['HTTP_HOST'] : '');
+    $requestHost = $requestHostParts[0];
     if (!$originHost || !hash_equals(strtolower($requestHost), strtolower((string) $originHost))) {
         respond(['error' => 'Запрещенный источник запроса.'], 403);
     }
 }
 
-function open_database(array $config): PDO
+function open_database(array $config)
 {
     $dsn = sprintf('mysql:host=%s;dbname=%s;charset=utf8mb4', $config['db_host'], $config['db_name']);
     return new PDO($dsn, $config['db_user'], $config['db_password'], [
@@ -48,7 +48,7 @@ function open_database(array $config): PDO
     ]);
 }
 
-function has_column(PDO $pdo, string $table, string $column): bool
+function has_column(PDO $pdo, $table, $column)
 {
     $statement = $pdo->prepare('SELECT COUNT(*) FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name');
@@ -56,7 +56,7 @@ function has_column(PDO $pdo, string $table, string $column): bool
     return (int) $statement->fetchColumn() > 0;
 }
 
-function has_index(PDO $pdo, string $table, string $index): bool
+function has_index(PDO $pdo, $table, $index)
 {
     $statement = $pdo->prepare('SELECT COUNT(*) FROM information_schema.STATISTICS
         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND INDEX_NAME = :index_name');
@@ -64,7 +64,7 @@ function has_index(PDO $pdo, string $table, string $index): bool
     return (int) $statement->fetchColumn() > 0;
 }
 
-function initialize_database(PDO $pdo, array $config): int
+function initialize_database(PDO $pdo, array $config)
 {
     $pdo->exec("CREATE TABLE IF NOT EXISTS manager_users (
         id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -124,19 +124,19 @@ function initialize_database(PDO $pdo, array $config): int
     return $adminId;
 }
 
-function public_user(array $row): array
+function public_user(array $row)
 {
     return [
         'id' => (int) $row['id'],
         'login' => (string) $row['login'],
         'role' => $row['role'] === 'admin' ? 'admin' : 'user',
-        'createdAt' => (string) ($row['created_at'] ?? ''),
+        'createdAt' => isset($row['created_at']) ? (string) $row['created_at'] : '',
     ];
 }
 
-function current_user(PDO $pdo): ?array
+function current_user(PDO $pdo)
 {
-    $userId = (int) ($_SESSION['manager_user_id'] ?? 0);
+    $userId = isset($_SESSION['manager_user_id']) ? (int) $_SESSION['manager_user_id'] : 0;
     if ($userId === 0) {
         return null;
     }
@@ -150,7 +150,7 @@ function current_user(PDO $pdo): ?array
     return public_user($row);
 }
 
-function require_user(PDO $pdo): array
+function require_user(PDO $pdo)
 {
     $user = current_user($pdo);
     if (!$user) {
@@ -159,7 +159,7 @@ function require_user(PDO $pdo): array
     return $user;
 }
 
-function require_admin(PDO $pdo): array
+function require_admin(PDO $pdo)
 {
     $user = require_user($pdo);
     if ($user['role'] !== 'admin') {
@@ -168,28 +168,38 @@ function require_admin(PDO $pdo): array
     return $user;
 }
 
-function normalize_record(array $record): ?array
+function normalize_record(array $record)
 {
     $data = isset($record['data']) && is_array($record['data']) ? $record['data'] : [];
-    $number = trim((string) ($record['number'] ?? $record['contractNumber'] ?? $data['contractNumber'] ?? ''));
+    if (isset($record['number'])) {
+        $numberSource = $record['number'];
+    } elseif (isset($record['contractNumber'])) {
+        $numberSource = $record['contractNumber'];
+    } elseif (isset($data['contractNumber'])) {
+        $numberSource = $data['contractNumber'];
+    } else {
+        $numberSource = '';
+    }
+    $number = trim((string) $numberSource);
     if ($number === '') {
         return null;
     }
     $totals = isset($data['totals']) && is_array($data['totals']) ? $data['totals'] : [];
     $customer = isset($data['customer']) && is_array($data['customer']) ? $data['customer'] : [];
-    $amount = (float) ($record['amount'] ?? $totals['grandTotal'] ?? 0);
+    $amountSource = isset($record['amount']) ? $record['amount'] : (isset($totals['grandTotal']) ? $totals['grandTotal'] : 0);
+    $amount = (float) $amountSource;
     return [
         'number' => $number,
-        'date' => (string) ($record['date'] ?? $data['contractDate'] ?? ''),
-        'counterparty' => (string) ($record['counterparty'] ?? $customer['name'] ?? $customer['inn'] ?? ''),
+        'date' => (string) (isset($record['date']) ? $record['date'] : (isset($data['contractDate']) ? $data['contractDate'] : '')),
+        'counterparty' => (string) (isset($record['counterparty']) ? $record['counterparty'] : (isset($customer['name']) ? $customer['name'] : (isset($customer['inn']) ? $customer['inn'] : ''))),
         'amount' => is_finite($amount) ? $amount : 0,
-        'status' => ($record['status'] ?? '') === 'exported' ? 'exported' : 'draft',
-        'updatedAt' => (string) ($record['updatedAt'] ?? gmdate('c')),
+        'status' => (isset($record['status']) ? $record['status'] : '') === 'exported' ? 'exported' : 'draft',
+        'updatedAt' => (string) (isset($record['updatedAt']) ? $record['updatedAt'] : gmdate('c')),
         'data' => $data,
     ];
 }
 
-function normalize_presets($source): array
+function normalize_presets($source)
 {
     if (!is_array($source)) {
         return [];
@@ -199,14 +209,14 @@ function normalize_presets($source): array
         if (!is_array($entry)) {
             continue;
         }
-        $title = trim((string) ($entry['title'] ?? ''));
-        $description = trim((string) ($entry['description'] ?? ''));
+        $title = trim(isset($entry['title']) ? (string) $entry['title'] : '');
+        $description = trim(isset($entry['description']) ? (string) $entry['description'] : '');
         if ($title === '' || $description === '') {
             continue;
         }
         $result[] = [
-            'group' => trim((string) ($entry['group'] ?? $entry['category'] ?? 'Общее')) ?: 'Общее',
-            'subgroup' => trim((string) ($entry['subgroup'] ?? $entry['subcategory'] ?? 'Без подгруппы')) ?: 'Без подгруппы',
+            'group' => trim((string) (isset($entry['group']) ? $entry['group'] : (isset($entry['category']) ? $entry['category'] : 'Общее'))) ?: 'Общее',
+            'subgroup' => trim((string) (isset($entry['subgroup']) ? $entry['subgroup'] : (isset($entry['subcategory']) ? $entry['subcategory'] : 'Без подгруппы'))) ?: 'Без подгруппы',
             'title' => $title,
             'description' => $description,
         ];
@@ -214,7 +224,7 @@ function normalize_presets($source): array
     return $result;
 }
 
-function fetch_records(PDO $pdo, array $user): array
+function fetch_records(PDO $pdo, array $user)
 {
     $sql = 'SELECT contracts.*, users.login AS owner_login
         FROM manager_contracts contracts
@@ -227,7 +237,7 @@ function fetch_records(PDO $pdo, array $user): array
     $sql .= ' ORDER BY contracts.updated_at DESC';
     $statement = $pdo->prepare($sql);
     $statement->execute($params);
-    return array_map(static function (array $row): array {
+    return array_map(static function (array $row) {
         $data = json_decode((string) $row['data_json'], true);
         return [
             'number' => (string) $row['record_number'],
@@ -236,13 +246,13 @@ function fetch_records(PDO $pdo, array $user): array
             'amount' => (float) $row['amount'],
             'status' => $row['status'] === 'exported' ? 'exported' : 'draft',
             'updatedAt' => (string) $row['updated_at'],
-            'ownerLogin' => (string) ($row['owner_login'] ?? 'Удалённый пользователь'),
+            'ownerLogin' => isset($row['owner_login']) ? (string) $row['owner_login'] : 'Удалённый пользователь',
             'data' => is_array($data) ? $data : [],
         ];
     }, $statement->fetchAll());
 }
 
-function save_record(PDO $pdo, array $record, array $user): void
+function save_record(PDO $pdo, array $record, array $user)
 {
     $ownerStatement = $pdo->prepare('SELECT owner_id FROM manager_contracts WHERE record_number = :number LIMIT 1');
     $ownerStatement->execute([':number' => $record['number']]);
@@ -269,10 +279,10 @@ function save_record(PDO $pdo, array $record, array $user): void
     ]);
 }
 
-function fetch_presets(PDO $pdo): array
+function fetch_presets(PDO $pdo)
 {
     $rows = $pdo->query('SELECT group_name, subgroup_name, title, description FROM manager_tech_presets ORDER BY sort_order, id')->fetchAll();
-    return array_map(static function (array $row): array {
+    return array_map(static function (array $row) {
         return [
             'group' => (string) $row['group_name'],
             'subgroup' => (string) $row['subgroup_name'],
@@ -282,7 +292,7 @@ function fetch_presets(PDO $pdo): array
     }, $rows);
 }
 
-function replace_presets(PDO $pdo, array $presets): void
+function replace_presets(PDO $pdo, array $presets)
 {
     $pdo->beginTransaction();
     try {
@@ -300,13 +310,13 @@ function replace_presets(PDO $pdo, array $presets): void
             ]);
         }
         $pdo->commit();
-    } catch (Throwable $error) {
+    } catch (Exception $error) {
         $pdo->rollBack();
         throw $error;
     }
 }
 
-function import_initial_data(PDO $pdo, int $adminId): void
+function import_initial_data(PDO $pdo, $adminId)
 {
     $root = dirname(__DIR__);
     $contractCount = (int) $pdo->query('SELECT COUNT(*) FROM manager_contracts')->fetchColumn();
@@ -332,13 +342,13 @@ function import_initial_data(PDO $pdo, int $adminId): void
     }
 }
 
-function fetch_users(PDO $pdo): array
+function fetch_users(PDO $pdo)
 {
     $rows = $pdo->query('SELECT id, login, role, created_at FROM manager_users ORDER BY login')->fetchAll();
     return array_map('public_user', $rows);
 }
 
-function validate_login(string $login): bool
+function validate_login($login)
 {
     return preg_match('/^[A-Za-z0-9._-]{3,64}$/', $login) === 1;
 }
@@ -346,20 +356,14 @@ function validate_login(string $login): bool
 try {
     $config = require __DIR__ . '/config.php';
     $secureCookie = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
-    session_name((string) ($config['session_name'] ?? 'manager_app_session'));
-    session_set_cookie_params([
-        'lifetime' => 0,
-        'path' => '/',
-        'secure' => $secureCookie,
-        'httponly' => true,
-        'samesite' => 'Lax',
-    ]);
+    session_name(isset($config['session_name']) ? (string) $config['session_name'] : 'manager_app_session');
+    session_set_cookie_params(0, '/', '', $secureCookie, true);
     session_start();
     $pdo = open_database($config);
     $adminId = initialize_database($pdo, $config);
     import_initial_data($pdo, $adminId);
-    $route = trim((string) ($_GET['route'] ?? ''), '/');
-    $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    $route = trim(isset($_GET['route']) ? (string) $_GET['route'] : '', '/');
+    $method = strtoupper(isset($_SERVER['REQUEST_METHOD']) ? (string) $_SERVER['REQUEST_METHOD'] : 'GET');
 
     if ($route === 'health' && $method === 'GET') {
         respond(['ok' => true, 'database' => true]);
@@ -367,11 +371,12 @@ try {
     if ($route === 'auth/login' && $method === 'POST') {
         require_same_origin();
         $body = request_json();
-        $login = trim((string) ($body['login'] ?? ''));
+        $login = trim(isset($body['login']) ? (string) $body['login'] : '');
         $statement = $pdo->prepare('SELECT id, login, password_hash, role, created_at FROM manager_users WHERE login = :login LIMIT 1');
         $statement->execute([':login' => $login]);
         $row = $statement->fetch();
-        if (!$row || !password_verify((string) ($body['password'] ?? ''), (string) $row['password_hash'])) {
+        $loginPassword = isset($body['password']) ? (string) $body['password'] : '';
+        if (!$row || !password_verify($loginPassword, (string) $row['password_hash'])) {
             respond(['error' => 'Неверный логин или пароль.'], 401);
         }
         session_regenerate_id(true);
@@ -400,9 +405,9 @@ try {
         require_same_origin();
         require_admin($pdo);
         $body = request_json();
-        $login = trim((string) ($body['login'] ?? ''));
-        $password = (string) ($body['password'] ?? '');
-        $role = ($body['role'] ?? '') === 'admin' ? 'admin' : 'user';
+        $login = trim(isset($body['login']) ? (string) $body['login'] : '');
+        $password = isset($body['password']) ? (string) $body['password'] : '';
+        $role = (isset($body['role']) ? $body['role'] : '') === 'admin' ? 'admin' : 'user';
         if (!validate_login($login)) {
             respond(['error' => 'Логин: 3–64 символа, латинские буквы, цифры, точка, дефис или подчёркивание.'], 400);
         }
@@ -430,8 +435,8 @@ try {
         require_same_origin();
         $admin = require_admin($pdo);
         $body = request_json();
-        $userId = (int) ($body['id'] ?? 0);
-        $role = ($body['role'] ?? '') === 'admin' ? 'admin' : 'user';
+        $userId = isset($body['id']) ? (int) $body['id'] : 0;
+        $role = (isset($body['role']) ? $body['role'] : '') === 'admin' ? 'admin' : 'user';
         if ($userId === 0) {
             respond(['error' => 'Пользователь не найден.'], 404);
         }
@@ -460,7 +465,7 @@ try {
         require_same_origin();
         $admin = require_admin($pdo);
         $body = request_json();
-        $userId = (int) ($body['id'] ?? 0);
+        $userId = isset($body['id']) ? (int) $body['id'] : 0;
         if ($userId === $admin['id']) {
             respond(['error' => 'Нельзя удалить текущую учётную запись.'], 409);
         }
@@ -487,14 +492,14 @@ try {
         require_same_origin();
         $user = require_user($pdo);
         $body = request_json();
-        if (($body['action'] ?? '') === 'delete') {
+        if ((isset($body['action']) ? $body['action'] : '') === 'delete') {
             if ($user['role'] === 'admin') {
                 $statement = $pdo->prepare('DELETE FROM manager_contracts WHERE record_number = :number');
-                $statement->execute([':number' => trim((string) ($body['number'] ?? ''))]);
+                $statement->execute([':number' => trim(isset($body['number']) ? (string) $body['number'] : '')]);
             } else {
                 $statement = $pdo->prepare('DELETE FROM manager_contracts WHERE record_number = :number AND owner_id = :owner_id');
                 $statement->execute([
-                    ':number' => trim((string) ($body['number'] ?? '')),
+                    ':number' => trim(isset($body['number']) ? (string) $body['number'] : ''),
                     ':owner_id' => $user['id'],
                 ]);
             }
@@ -518,7 +523,7 @@ try {
         if ($presets === []) {
             respond(['error' => 'Справочник не может быть пустым.'], 400);
         }
-        $titles = array_map(static function (array $preset): string {
+        $titles = array_map(static function (array $preset) {
             return function_exists('mb_strtolower')
                 ? mb_strtolower($preset['title'])
                 : strtolower($preset['title']);
@@ -530,7 +535,7 @@ try {
         respond($presets);
     }
     respond(['error' => 'Метод или адрес API не найден.'], 404);
-} catch (Throwable $error) {
+} catch (Exception $error) {
     error_log($error->getMessage());
     respond(['error' => 'Серверная часть приложения еще не настроена.'], 503);
 }
