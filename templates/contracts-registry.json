@@ -5,11 +5,11 @@
     "counterparty": "111",
     "amount": 11111,
     "status": "exported",
-    "updatedAt": "2026-06-18T13:32:14.391Z",
+    "updatedAt": "2026-06-18T13:40:18.726Z",
     "data": {
       "contractNumber": "0000",
       "contractDate": "2026-06-18",
-      "documentTemplate": "invoiceContract",
+      "documentTemplate": "contract",
       "sellerKey": "ip",
       "seller": {
         "title": "ИП Купорова",
