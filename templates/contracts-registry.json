@@ -5,23 +5,24 @@
     "counterparty": "ООО \"ЛАРЕДО\"",
     "amount": 3267700,
     "status": "exported",
-    "updatedAt": "2026-06-18T13:03:07.735Z",
+    "updatedAt": "2026-06-18T13:03:48.343Z",
     "data": {
       "contractNumber": "0000",
       "contractDate": "2026-06-17",
       "documentTemplate": "contract",
-      "sellerKey": "ooo",
+      "sellerKey": "ip",
       "seller": {
-        "title": "ООО Веркуп",
-        "fullName": "ООО \"ВЕРКУП\"",
-        "vatRate": 0.22,
-        "vatLabel": "НДС 22%",
-        "legalAddress": "107065, РОССИЯ, г МОСКВА, ул КУРГАНСКАЯ, ДОМ 3А, корпус строение 1, оф ПОМЕЩ. 1/1",
-        "inn": "9718284789",
-        "kpp": "771801001",
-        "ogrn": "1257700358475",
-        "ogrnLabel": "ОГРН",
-        "checkingAccount": "40702810920000232070",
+        "title": "ИП Купорова",
+        "fullName": "Индивидуальный предприниматель Купорова Евгения Александровна",
+        "vatRate": 0.05,
+        "vatLabel": "НДС 5%",
+        "inn": "500805209810",
+        "ogrn": "320508100357479",
+        "ogrnLabel": "ОГРНИП",
+        "legalAddress": "143930 МО, г. Балашиха, Мирской пр-д, 9",
+        "phone": "8 (909) 655-98-48",
+        "email": "kuporov.biz@yandex.ru",
+        "checkingAccount": "40802810320000702819",
         "bankName": "ООО \"Банк Точка\"",
         "bankInn": "9721194461",
         "correspondentAccount": "30101810745374525104",
@@ -49,14 +50,30 @@
           "group": "",
           "subgroup": "",
           "preset": "",
-          "description": "Фотозона:",
+          "description": "Фотозона",
+          "mockups": []
+        },
+        {
+          "group": "",
+          "subgroup": "",
+          "preset": "",
+          "description": "Разработка проектно-конструкторской документации",
+          "mockups": []
+        },
+        {
+          "group": "",
+          "subgroup": "",
+          "preset": "",
+          "description": "Оформление аттракциона \"Бассейн\"",
           "mockups": []
         }
       ],
       "technicalDescriptions": [
-        "Фотозона:"
+        "Фотозона",
+        "Разработка проектно-конструкторской документации",
+        "Оформление аттракциона \"Бассейн\""
       ],
-      "technicalDescription": "Фотозона:",
+      "technicalDescription": "Фотозона\nРазработка проектно-конструкторской документации\nОформление аттракциона \"Бассейн\"",
       "requestLibraryAdd": false,
       "items": [
         {
@@ -110,8 +127,8 @@
         }
       ],
       "totals": {
-        "totalWithoutVat": 2678442.62295082,
-        "vat": 589257.3770491803,
+        "totalWithoutVat": 3112095.238095238,
+        "vat": 155604.7619047619,
         "grandTotal": 3267700
       },
       "mockups": []
