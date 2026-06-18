@@ -5,7 +5,7 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 
-function respond(mixed $payload, int $status = 200): never
+function respond($payload, int $status = 200): void
 {
     http_response_code($status);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -189,7 +189,7 @@ function normalize_record(array $record): ?array
     ];
 }
 
-function normalize_presets(mixed $source): array
+function normalize_presets($source): array
 {
     if (!is_array($source)) {
         return [];
@@ -272,12 +272,14 @@ function save_record(PDO $pdo, array $record, array $user): void
 function fetch_presets(PDO $pdo): array
 {
     $rows = $pdo->query('SELECT group_name, subgroup_name, title, description FROM manager_tech_presets ORDER BY sort_order, id')->fetchAll();
-    return array_map(static fn(array $row): array => [
-        'group' => (string) $row['group_name'],
-        'subgroup' => (string) $row['subgroup_name'],
-        'title' => (string) $row['title'],
-        'description' => (string) $row['description'],
-    ], $rows);
+    return array_map(static function (array $row): array {
+        return [
+            'group' => (string) $row['group_name'],
+            'subgroup' => (string) $row['subgroup_name'],
+            'title' => (string) $row['title'],
+            'description' => (string) $row['description'],
+        ];
+    }, $rows);
 }
 
 function replace_presets(PDO $pdo, array $presets): void
@@ -516,12 +518,11 @@ try {
         if ($presets === []) {
             respond(['error' => 'Справочник не может быть пустым.'], 400);
         }
-        $titles = array_map(
-            static fn(array $preset): string => function_exists('mb_strtolower')
+        $titles = array_map(static function (array $preset): string {
+            return function_exists('mb_strtolower')
                 ? mb_strtolower($preset['title'])
-                : strtolower($preset['title']),
-            $presets
-        );
+                : strtolower($preset['title']);
+        }, $presets);
         if (count($titles) !== count(array_unique($titles))) {
             respond(['error' => 'Названия шаблонов не должны повторяться.'], 400);
         }
