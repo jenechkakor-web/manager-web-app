@@ -1,0 +1,80 @@
+name: Deploy to Beget
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-beget.yml"
+      - ".htaccess"
+      - "*.html"
+      - "*.js"
+      - "*.css"
+      - "dogovor_final.docx"
+      - "invoice_template.docx"
+      - "schet_dogovor_template.docx"
+      - "schet_dogovor_zamery_template.docx"
+      - "assets/**"
+      - "templates/tech-presets.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-beget-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FTP_SERVER: ${{ secrets.BEGET_FTP_SERVER }}
+      FTP_USERNAME: ${{ secrets.BEGET_FTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.BEGET_FTP_PASSWORD }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare public files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p deploy/assets deploy/templates
+          cp .htaccess deploy/
+          cp index.html registry.html library.html deploy/
+          cp app.js registry-storage-sync.js registry.js library.js styles.css deploy/
+          cp dogovor_final.docx invoice_template.docx deploy/
+          cp schet_dogovor_template.docx schet_dogovor_zamery_template.docx deploy/
+          cp -R assets/. deploy/assets/
+          cp templates/tech-presets.json deploy/templates/
+          cp templates/contracts-registry.json deploy/templates/
+
+      - name: Validate FTP secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$FTP_SERVER"
+          test -n "$FTP_USERNAME"
+          test -n "$FTP_PASSWORD"
+
+      - name: Install FTP client
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Upload to Beget
+        shell: bash
+        run: |
+          set -euo pipefail
+          lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
+          set ftp:ssl-force true
+          set ftp:ssl-protect-data true
+          set ssl:verify-certificate true
+          set net:max-retries 3
+          set net:timeout 20
+          mirror --reverse --verbose --parallel=4 deploy/ /
+          bye
+          LFTP_COMMANDS
