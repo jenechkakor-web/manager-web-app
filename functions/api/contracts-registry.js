@@ -3,7 +3,12 @@ const GITHUB_REPO = "manager-web-app";
 const GITHUB_BRANCH = "main";
 const GITHUB_REGISTRY_PATH = "templates/contracts-registry.json";
 const GITHUB_CONTENTS_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_REGISTRY_PATH}`;
-const ALLOWED_CORS_HOSTS = new Set(["manager-web-app.pages.dev", "raw.githack.com", "rawcdn.githack.com"]);
+const ALLOWED_CORS_HOSTS = new Set([
+  "manager-web-app.pages.dev",
+  "manager.verkup.ru",
+  "raw.githack.com",
+  "rawcdn.githack.com",
+]);
 
 function allowedOrigin(request) {
   const origin = request.headers.get("Origin");
