@@ -16,6 +16,7 @@ on:
       - "schet_dogovor_template.docx"
       - "schet_dogovor_zamery_template.docx"
       - "assets/**"
+      - "api/**"
       - "templates/tech-presets.json"
 
 permissions:
@@ -42,13 +43,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p deploy/assets deploy/templates
+          mkdir -p deploy/assets deploy/api deploy/templates
           cp .htaccess deploy/
-          cp index.html registry.html library.html deploy/
-          cp app.js registry-storage-sync.js registry.js library.js styles.css deploy/
+          cp index.html login.html registry.html library.html users.html deploy/
+          cp app.js auth.js login.js registry-storage-sync.js registry.js library.js users.js styles.css deploy/
           cp dogovor_final.docx invoice_template.docx deploy/
           cp schet_dogovor_template.docx schet_dogovor_zamery_template.docx deploy/
           cp -R assets/. deploy/assets/
+          cp api/.htaccess api/config.php api/config.local.example.php api/index.php deploy/api/
           cp templates/tech-presets.json deploy/templates/
           cp templates/contracts-registry.json deploy/templates/
 

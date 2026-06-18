@@ -199,8 +199,8 @@ function fetchRepositoryAsset(path, options = {}) {
 }
 
 function techPresetEndpoints() {
+  if (window.ManagerAuth?.usesServerAuth) return [cacheBusted("/api/tech-presets")];
   const endpoints = [cacheBusted("templates/tech-presets.json"), cacheBusted(GITHUB_RAW_PRESETS_URL)];
-  if (isLocalAppServer()) endpoints.unshift(cacheBusted("/api/tech-presets"));
   return endpoints;
 }
 
@@ -578,151 +578,6 @@ function getTechnicalDescriptions() {
   return getTechnicalBlocks()
     .map((block) => block.description)
     .filter(Boolean);
-}
-
-function renderTechPresetEditor() {
-  techPresetEditorList.innerHTML = techPresets
-    .map(
-      (preset, index) => `
-        <div class="library-row">
-          <div class="library-row-header">
-            <label>
-              <span>Название шаблона</span>
-              <input class="library-title" value="${escapeHtml(preset.title)}" />
-            </label>
-            <button class="icon-button" data-remove-preset="${index}" type="button" title="Удалить шаблон">×</button>
-          </div>
-          <label>
-            <span>Текст описания</span>
-            <textarea class="library-description" rows="5">${escapeHtml(preset.description)}</textarea>
-          </label>
-        </div>
-      `,
-    )
-    .join("");
-}
-
-function readTechPresetEditor() {
-  const rows = [...techPresetEditorList.querySelectorAll(".library-row")];
-  const presets = rows.map((row) => ({
-    title: row.querySelector(".library-title").value.trim(),
-    description: row.querySelector(".library-description").value.trim(),
-  }));
-
-  if (presets.some((preset) => !preset.title || !preset.description)) {
-    alert("Заполните название и текст каждого шаблона.");
-    return null;
-  }
-
-  const titles = presets.map((preset) => preset.title.toLowerCase());
-  if (new Set(titles).size !== titles.length) {
-    alert("Названия шаблонов не должны повторяться.");
-    return null;
-  }
-
-  return presets;
-}
-
-async function loginTechLibrary() {
-  const login = techLibraryLoginInput.value.trim();
-  const password = techLibraryPasswordInput.value;
-
-  if (login === TECH_LIBRARY_ADMIN_LOGIN && password === TECH_LIBRARY_ADMIN_PASSWORD) {
-    techLibraryToken = "browser-admin";
-    sessionStorage.setItem("techLibraryToken", techLibraryToken);
-    techLibraryPasswordInput.value = "";
-    showTechLibraryEditor(true);
-    return;
-  }
-
-  if (!isLocalAppServer()) {
-    alert("Неверный логин или пароль.");
-    return;
-  }
-
-  try {
-    const response = await fetch("/api/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ login, password }),
-    });
-
-    if (!response.ok) {
-      alert("Неверный логин или пароль.");
-      return;
-    }
-
-    const result = await response.json();
-    techLibraryToken = result.token || "";
-    sessionStorage.setItem("techLibraryToken", techLibraryToken);
-    techLibraryPasswordInput.value = "";
-    showTechLibraryEditor(true);
-  } catch {
-    alert("Общее редактирование доступно при запуске через сервер приложения.");
-  }
-}
-
-function githubHeaders(token) {
-  return {
-    Accept: "application/vnd.github+json",
-    Authorization: `Bearer ${token}`,
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-}
-
-async function saveTechLibraryToGitHub(presets, token) {
-  const currentResponse = await fetch(`${GITHUB_CONTENTS_API_URL}?ref=${GITHUB_BRANCH}`, {
-    headers: githubHeaders(token),
-    cache: "no-store",
-  });
-
-  if (!currentResponse.ok) throw new Error("GitHub read failed");
-  const currentFile = await currentResponse.json();
-  const content = `${JSON.stringify(presets, null, 2)}\n`;
-  const saveResponse = await fetch(GITHUB_CONTENTS_API_URL, {
-    method: "PUT",
-    headers: {
-      ...githubHeaders(token),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      message: "Update technical description presets",
-      content: utf8ToBase64(content),
-      branch: GITHUB_BRANCH,
-      sha: currentFile.sha,
-    }),
-  });
-
-  if (!saveResponse.ok) {
-    const details = await saveResponse.json().catch(() => ({}));
-    throw new Error(details.message || "GitHub save failed");
-  }
-
-  return presets;
-}
-
-async function saveTechLibrary() {
-  const presets = readTechPresetEditor();
-  if (!presets) return;
-  const githubToken = techGitHubTokenInput.value.trim();
-
-  try {
-    if (!githubToken) {
-      alert("Введите GitHub token для сохранения общего справочника.");
-      return;
-    }
-
-    const savedPresets = await saveTechLibraryToGitHub(presets, githubToken);
-
-    techGitHubToken = githubToken;
-    localStorage.setItem("techGitHubToken", techGitHubToken);
-    techPresets = normalizeTechPresets(savedPresets);
-    refreshTechPresetSelects();
-    renderTechPresetEditor();
-    alert("Справочник сохранен.");
-  } catch {
-    alert("Не удалось сохранить справочник.");
-  }
 }
 
 function getItems() {
@@ -2711,30 +2566,29 @@ function buildSelectedDocxBlob(data) {
 function createAnonymousDraftRegistryNumber() {
   const now = new Date();
   const pad = (value) => String(value).padStart(2, "0");
-  const stamp = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-  return `Черновик без номера ${stamp}`;
+  const stamp = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const owner = window.ManagerAuth?.user?.login || "user";
+  return `Черновик без номера ${owner} ${stamp}`;
 }
 
 function anonymousDraftRegistryNumber() {
-  const existing = localStorage.getItem(DRAFT_REGISTRY_NUMBER_KEY);
+  const existing = sessionStorage.getItem(DRAFT_REGISTRY_NUMBER_KEY);
   if (existing) return existing;
   const number = createAnonymousDraftRegistryNumber();
-  localStorage.setItem(DRAFT_REGISTRY_NUMBER_KEY, number);
+  sessionStorage.setItem(DRAFT_REGISTRY_NUMBER_KEY, number);
   return number;
 }
 
 async function clearAnonymousDraftRegistryRecord(actualNumber) {
-  const anonymousNumber = localStorage.getItem(DRAFT_REGISTRY_NUMBER_KEY);
+  const anonymousNumber = sessionStorage.getItem(DRAFT_REGISTRY_NUMBER_KEY);
   if (!anonymousNumber || anonymousNumber === actualNumber || !window.ContractRegistry) return;
 
   try {
-    await window.ContractRegistry.deleteRecord(anonymousNumber, {
-      token: window.ContractRegistry.registryToken(),
-    });
+    await window.ContractRegistry.deleteRecord(anonymousNumber);
   } catch {
     // The real numbered record is already saved; stale local anonymous drafts should not block the user.
   }
-  localStorage.removeItem(DRAFT_REGISTRY_NUMBER_KEY);
+  sessionStorage.removeItem(DRAFT_REGISTRY_NUMBER_KEY);
 }
 
 async function saveContractRegistryEntry(data, status, options = {}) {
@@ -2756,23 +2610,20 @@ async function saveContractRegistryEntry(data, status, options = {}) {
     };
   }
   if (!record) return { skipped: true };
-  const result = await window.ContractRegistry.upsertRecord(record, {
-    token: window.ContractRegistry.registryToken(),
-  });
+  const result = await window.ContractRegistry.upsertRecord(record);
   if (data.contractNumber) await clearAnonymousDraftRegistryRecord(data.contractNumber);
   return result;
 }
 
 async function saveDraft() {
   const data = collectData();
-  localStorage.setItem("managerContractDraft", JSON.stringify(data));
-  localStorage.setItem("dadataToken", getField("dadataToken").value);
+  localStorage.setItem(window.ManagerAuth.storageKey("dadataToken"), getField("dadataToken").value);
   const registryNumber = data.contractNumber || anonymousDraftRegistryNumber();
   try {
     await saveContractRegistryEntry(data, "draft", { number: registryNumber });
     alert(data.contractNumber ? "Черновик сохранен и добавлен в реестр." : `Черновик сохранен и добавлен в реестр как «${registryNumber}».`);
   } catch {
-    alert("Черновик сохранен локально, но реестр не обновился.");
+    alert("Не удалось сохранить черновик в реестре.");
   }
 }
 
@@ -2815,7 +2666,7 @@ function loadDraftData(data) {
 }
 
 function loadDraft() {
-  const token = localStorage.getItem("dadataToken");
+  const token = localStorage.getItem(window.ManagerAuth.storageKey("dadataToken"));
   if (token) setField("dadataToken", token);
 
   const registryData = window.ContractRegistry?.getContractToOpen();
@@ -2824,14 +2675,6 @@ function loadDraft() {
     return;
   }
 
-  const raw = localStorage.getItem("managerContractDraft");
-  if (!raw) return;
-
-  try {
-    loadDraftData(JSON.parse(raw));
-  } catch {
-    localStorage.removeItem("managerContractDraft");
-  }
 }
 
 async function lookupInn() {
@@ -2872,7 +2715,7 @@ async function lookupInn() {
     setField("customerAddress", company.data.address?.unrestricted_value);
     setField("customerOgrn", company.data.ogrn);
     setField("customerDirector", company.data.management?.name);
-    localStorage.setItem("dadataToken", token);
+    localStorage.setItem(window.ManagerAuth.storageKey("dadataToken"), token);
   } catch {
     alert("Не удалось получить данные по ИНН. Проверьте токен или заполните реквизиты вручную.");
   }
@@ -2915,6 +2758,7 @@ form.addEventListener("change", (event) => {
 });
 
 async function initApp() {
+  await window.ManagerAuth.ready;
   setField("contractDate", todayIso());
   await loadTechPresets();
   addItem();

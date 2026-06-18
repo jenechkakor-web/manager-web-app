@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="ru">
+<html class="auth-pending" lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Договоры менеджера</title>
-    <link rel="stylesheet" href="styles.css?v=20260606-registry-1" />
+    <link rel="stylesheet" href="styles.css?v=20260618-auth-1" />
   </head>
   <body>
     <main class="app-shell">
@@ -14,14 +14,19 @@
             <span class="brand-mark">Д</span>
             <div>
               <strong>Договоры</strong>
-              <small>первичный блок</small>
+              <small>рабочее пространство</small>
             </div>
           </div>
           <nav class="nav-list">
             <button class="nav-item active" type="button">Создать Договор и Счет.</button>
-            <a class="nav-item" href="registry.html?v=20260606-registry-1" target="_blank" rel="noopener">Реестр договоров</a>
-            <a class="nav-item" href="library.html?v=20260606-groups-4" target="_blank" rel="noopener">Справочник</a>
+            <a class="nav-item" href="registry.html">Реестр договоров</a>
+            <a class="nav-item" href="library.html">Справочник</a>
+            <a class="nav-item hidden" href="users.html" data-admin-only>Пользователи</a>
           </nav>
+          <div class="sidebar-session">
+            <div><strong data-auth-login></strong><small data-auth-role></small></div>
+            <button class="button ghost" type="button" data-logout>Выйти</button>
+          </div>
         </aside>
 
         <form id="contractForm" class="content">
@@ -235,7 +240,8 @@
       </section>
     </main>
 
-    <script src="registry-storage-sync.js?v=20260617-drafts-1"></script>
-    <script src="app.js?v=20260617-drafts-1"></script>
+    <script src="auth.js?v=20260618-auth-1"></script>
+    <script src="registry-storage-sync.js?v=20260618-auth-1"></script>
+    <script src="app.js?v=20260618-auth-1"></script>
   </body>
 </html>

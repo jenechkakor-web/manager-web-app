@@ -5,6 +5,15 @@ AddType application/vnd.openxmlformats-officedocument.wordprocessingml.document 
 AddType application/msword .doc
 AddType application/json .json
 
+<Files "contracts-registry.json">
+  Require all denied
+</Files>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^api/(health|contracts-registry|tech-presets|users|auth/(?:login|logout|session))/?$ api/index.php?route=$1 [QSA,L]
+</IfModule>
+
 <IfModule mod_headers.c>
   <FilesMatch "\.(html|js|css|json|docx|doc|png|jpe?g|webp)$">
     Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
