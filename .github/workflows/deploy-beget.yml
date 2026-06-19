@@ -68,7 +68,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes lftp
 
-      - name: Upload to Beget
+      - name: Upload API to Beget
         shell: bash
         run: |
           set -euo pipefail
@@ -76,8 +76,29 @@ jobs:
           set ftp:ssl-force true
           set ftp:ssl-protect-data true
           set ssl:verify-certificate true
-          set net:max-retries 3
+          set net:max-retries 6
           set net:timeout 20
-          mirror --reverse --verbose --parallel=4 deploy/ /
+          set net:reconnect-interval-base 5
+          set xfer:clobber true
+          mkdir -p /api
+          put deploy/api/index.php -o /api/index.php
+          put deploy/api/config.php -o /api/config.php
+          put deploy/api/config.local.example.php -o /api/config.local.example.php
+          put deploy/api/.htaccess -o /api/.htaccess
+          bye
+          LFTP_COMMANDS
+
+      - name: Upload public files to Beget
+        shell: bash
+        run: |
+          set -euo pipefail
+          lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
+          set ftp:ssl-force true
+          set ftp:ssl-protect-data true
+          set ssl:verify-certificate true
+          set net:max-retries 6
+          set net:timeout 20
+          set net:reconnect-interval-base 5
+          mirror --reverse --verbose --parallel=2 --exclude-glob='api/*' deploy/ /
           bye
           LFTP_COMMANDS
