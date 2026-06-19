@@ -29,18 +29,19 @@
         <section class="content">
           <header class="topbar">
             <div><p class="eyebrow">Администрирование</p><h1>Пользователи</h1></div>
+            <button class="button ghost" id="reloadUsersButton" type="button">Обновить</button>
           </header>
           <section class="form-area users-content">
             <section class="panel">
               <div class="panel-title"><h2>Новый пользователь</h2></div>
-              <form id="createUserForm" class="user-create-grid">
+              <form id="createUserForm" class="user-create-grid" autocomplete="off">
                 <label>
                   <span>Логин</span>
-                  <input id="newUserLogin" autocomplete="off" minlength="3" maxlength="64" required />
+                  <input id="newUserLogin" name="new-account-login" autocomplete="off" minlength="3" maxlength="64" data-1p-ignore data-lpignore="true" required />
                 </label>
                 <label>
                   <span>Пароль</span>
-                  <input id="newUserPassword" type="password" autocomplete="new-password" minlength="8" required />
+                  <input id="newUserPassword" name="new-account-password" type="password" autocomplete="new-password" minlength="8" data-1p-ignore data-lpignore="true" required />
                 </label>
                 <label>
                   <span>Права</span>
@@ -51,7 +52,7 @@
                 </label>
                 <button class="button primary" id="createUserButton" type="submit">Создать</button>
               </form>
-              <p class="status-line" id="usersStatus" aria-live="polite"></p>
+              <p class="status-line" id="usersStatus" role="status" aria-live="polite"></p>
             </section>
 
             <section class="panel">
@@ -63,6 +64,6 @@
       </section>
     </main>
     <script src="auth.js?v=20260618-auth-1"></script>
-    <script src="users.js?v=20260618-auth-1"></script>
+    <script src="users.js?v=20260619-passwords-1"></script>
   </body>
 </html>

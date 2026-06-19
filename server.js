@@ -242,6 +242,16 @@ async function handleApi(req, res, pathname) {
     const target = users.find((user) => user.id === Number(body.id));
     if (!target) throw Object.assign(new Error("Пользователь не найден."), { status: 404 });
     if (req.method === "PUT") {
+      if (body.action === "password") {
+        const password = String(body.password || "");
+        if (password.length < 8) {
+          throw Object.assign(new Error("Пароль должен содержать не менее 8 символов."), { status: 400 });
+        }
+        target.passwordHash = hashPassword(password);
+        await writeJson(usersPath, users);
+        sendJson(res, 200, users.map(publicUser).sort((a, b) => a.login.localeCompare(b.login)));
+        return;
+      }
       const nextRole = body.role === "admin" ? "admin" : "user";
       if (target.role === "admin" && nextRole !== "admin" && users.filter((user) => user.role === "admin").length <= 1) {
         throw Object.assign(new Error("Нельзя снять права у последнего администратора."), { status: 409 });

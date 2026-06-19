@@ -436,10 +436,25 @@ try {
         $admin = require_admin($pdo);
         $body = request_json();
         $userId = isset($body['id']) ? (int) $body['id'] : 0;
-        $role = (isset($body['role']) ? $body['role'] : '') === 'admin' ? 'admin' : 'user';
         if ($userId === 0) {
             respond(['error' => 'Пользователь не найден.'], 404);
         }
+        if ((isset($body['action']) ? $body['action'] : '') === 'password') {
+            $password = isset($body['password']) ? (string) $body['password'] : '';
+            if (strlen($password) < 8) {
+                respond(['error' => 'Пароль должен содержать не менее 8 символов.'], 400);
+            }
+            $statement = $pdo->prepare('UPDATE manager_users SET password_hash = :password_hash WHERE id = :id');
+            $statement->execute([
+                ':password_hash' => password_hash($password, PASSWORD_DEFAULT),
+                ':id' => $userId,
+            ]);
+            if ($statement->rowCount() === 0) {
+                respond(['error' => 'Пользователь не найден.'], 404);
+            }
+            respond(fetch_users($pdo));
+        }
+        $role = (isset($body['role']) ? $body['role'] : '') === 'admin' ? 'admin' : 'user';
         if ($role !== 'admin') {
             $statement = $pdo->prepare("SELECT role FROM manager_users WHERE id = :id");
             $statement->execute([':id' => $userId]);

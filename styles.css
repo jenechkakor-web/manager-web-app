@@ -697,6 +697,16 @@ fieldset {
   font-size: 13px;
 }
 
+.status-line.status-error {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.status-line.status-success {
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
 .library-editor {
   display: grid;
   gap: 12px;
@@ -864,13 +874,20 @@ fieldset {
 
 .user-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(180px, 0.5fr) auto;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(160px, 0.45fr) minmax(330px, 1fr) auto;
   gap: 14px;
   align-items: end;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfc;
+}
+
+.user-password-action {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
 }
 
 .user-name {
@@ -966,7 +983,8 @@ fieldset {
   .registry-admin-row,
   .tech-card-header,
   .user-create-grid,
-  .user-row {
+  .user-row,
+  .user-password-action {
     grid-template-columns: 1fr;
   }
 
