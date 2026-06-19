@@ -316,22 +316,9 @@ function replace_presets(PDO $pdo, array $presets)
     }
 }
 
-function import_initial_data(PDO $pdo, $adminId)
+function import_initial_presets(PDO $pdo)
 {
     $root = dirname(__DIR__);
-    $contractCount = (int) $pdo->query('SELECT COUNT(*) FROM manager_contracts')->fetchColumn();
-    $registryPath = $root . '/templates/contracts-registry.json';
-    if ($contractCount === 0 && is_file($registryPath)) {
-        $records = json_decode((string) file_get_contents($registryPath), true);
-        if (is_array($records)) {
-            $admin = ['id' => $adminId, 'login' => 'admin', 'role' => 'admin'];
-            foreach ($records as $source) {
-                if (is_array($source) && ($record = normalize_record($source))) {
-                    save_record($pdo, $record, $admin);
-                }
-            }
-        }
-    }
     $presetCount = (int) $pdo->query('SELECT COUNT(*) FROM manager_tech_presets')->fetchColumn();
     $presetsPath = $root . '/templates/tech-presets.json';
     if ($presetCount === 0 && is_file($presetsPath)) {
@@ -360,8 +347,8 @@ try {
     session_set_cookie_params(0, '/', '', $secureCookie, true);
     session_start();
     $pdo = open_database($config);
-    $adminId = initialize_database($pdo, $config);
-    import_initial_data($pdo, $adminId);
+    initialize_database($pdo, $config);
+    import_initial_presets($pdo);
     $route = trim(isset($_GET['route']) ? (string) $_GET['route'] : '', '/');
     $method = strtoupper(isset($_SERVER['REQUEST_METHOD']) ? (string) $_SERVER['REQUEST_METHOD'] : 'GET');
 
