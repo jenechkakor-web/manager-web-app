@@ -38,21 +38,47 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Prepare public files
+        id: prepare
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p deploy/assets deploy/api deploy/templates
-          cp .htaccess deploy/
-          cp index.html login.html registry.html library.html users.html deploy/
-          cp app.js auth.js login.js registry-storage-sync.js registry.js library.js users.js styles.css deploy/
-          cp dogovor_final.docx invoice_template.docx deploy/
-          cp schet_dogovor_template.docx schet_dogovor_zamery_template.docx deploy/
-          cp -R assets/. deploy/assets/
-          cp api/.htaccess api/config.php api/config.local.example.php api/index.php deploy/api/
-          cp templates/tech-presets.json deploy/templates/
-          cp templates/contracts-registry.json deploy/templates/
+          mkdir -p deploy-api deploy-public
+          cp api/.htaccess api/config.php api/config.local.example.php api/index.php deploy-api/
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            files=(
+              .htaccess
+              index.html login.html registry.html library.html users.html
+              app.js auth.js login.js registry-storage-sync.js registry.js library.js users.js styles.css
+              dogovor_final.docx invoice_template.docx
+              schet_dogovor_template.docx schet_dogovor_zamery_template.docx
+              templates/tech-presets.json templates/contracts-registry.json
+            )
+            while IFS= read -r asset; do
+              files+=("$asset")
+            done < <(find assets -type f -print)
+          else
+            mapfile -t files < <(git diff --name-only --diff-filter=ACMR \
+              "${{ github.event.before }}" "${{ github.sha }}")
+          fi
+
+          upload_public=false
+          for file in "${files[@]}"; do
+            case "$file" in
+              .htaccess|*.html|*.js|*.css|*.docx|assets/*|templates/tech-presets.json|templates/contracts-registry.json)
+                if [[ -f "$file" ]]; then
+                  mkdir -p "deploy-public/$(dirname "$file")"
+                  cp "$file" "deploy-public/$file"
+                  upload_public=true
+                fi
+                ;;
+            esac
+          done
+          echo "upload_public=$upload_public" >> "$GITHUB_OUTPUT"
 
       - name: Validate FTP secrets
         shell: bash
@@ -81,14 +107,15 @@ jobs:
           set net:reconnect-interval-base 5
           set xfer:clobber true
           mkdir -p /api
-          put deploy/api/index.php -o /api/index.php
-          put deploy/api/config.php -o /api/config.php
-          put deploy/api/config.local.example.php -o /api/config.local.example.php
-          put deploy/api/.htaccess -o /api/.htaccess
+          put deploy-api/index.php -o /api/index.php
+          put deploy-api/config.php -o /api/config.php
+          put deploy-api/config.local.example.php -o /api/config.local.example.php
+          put deploy-api/.htaccess -o /api/.htaccess
           bye
           LFTP_COMMANDS
 
       - name: Upload public files to Beget
+        if: steps.prepare.outputs.upload_public == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -99,6 +126,6 @@ jobs:
           set net:max-retries 6
           set net:timeout 20
           set net:reconnect-interval-base 5
-          mirror --reverse --verbose --parallel=1 --exclude-glob='api/*' deploy/ /
+          mirror --reverse --verbose --parallel=1 deploy-public/ /
           bye
           LFTP_COMMANDS
