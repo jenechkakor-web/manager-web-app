@@ -119,6 +119,38 @@ jobs:
           bye
           LFTP_COMMANDS
 
+      - name: Verify API deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            response="$(curl --fail --silent --show-error --max-time 20 https://manager.verkup.ru/api/health || true)"
+            if grep -q '"database":true' <<<"$response"; then
+              echo "API health check passed."
+              exit 0
+            fi
+
+            echo "API health check failed on attempt $attempt; uploading API again."
+            lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
+            set ftp:ssl-force true
+            set ftp:ssl-protect-data true
+            set ssl:verify-certificate true
+            set net:max-retries 6
+            set net:timeout 20
+            set net:reconnect-interval-base 5
+            set xfer:clobber true
+            put deploy-api/.htaccess -o /api/.htaccess
+            put deploy-api/dadata.local.php -o /api/dadata.local.php
+            put deploy-api/index.php -o /api/index.php
+            put deploy-api/config.php -o /api/config.php
+            bye
+            LFTP_COMMANDS
+            sleep 10
+          done
+
+          echo "API health check failed after all retries."
+          exit 1
+
       - name: Upload public files to Beget
         if: steps.prepare.outputs.upload_public == 'true'
         shell: bash
