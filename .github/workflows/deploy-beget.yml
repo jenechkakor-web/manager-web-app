@@ -48,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p deploy-api deploy-public
-          cp api/.htaccess api/config.php api/config.local.example.php api/dadata.local.example.php api/index.php deploy-api/
+          cp api/.htaccess api/config.php api/config.local.example.php api/dadata-client.php api/dadata.local.example.php api/index.php deploy-api/
           printf "<?php\n\nreturn ['dadata_token' => '%s'];\n" "$DADATA_API_TOKEN" > deploy-api/dadata.local.php
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -97,7 +97,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes lftp
 
-      - name: Upload API to Beget
+      - name: Upload core API to Beget
         shell: bash
         run: |
           set -euo pipefail
@@ -109,13 +109,11 @@ jobs:
           set net:timeout 20
           set net:reconnect-interval-base 5
           set xfer:clobber true
-          mkdir -p /api
+          set cmd:fail-exit true
           put deploy-api/.htaccess -o /api/.htaccess
-          put deploy-api/dadata.local.php -o /api/dadata.local.php
           put deploy-api/index.php -o /api/index.php
           put deploy-api/config.php -o /api/config.php
           put deploy-api/config.local.example.php -o /api/config.local.example.php
-          put deploy-api/dadata.local.example.php -o /api/dadata.local.example.php
           bye
           LFTP_COMMANDS
 
@@ -139,8 +137,8 @@ jobs:
               set net:timeout 20;
               set net:reconnect-interval-base 5;
               set xfer:clobber true;
+              set cmd:fail-exit true;
               put deploy-api/.htaccess -o /api/.htaccess;
-              put deploy-api/dadata.local.php -o /api/dadata.local.php;
               put deploy-api/index.php -o /api/index.php;
               put deploy-api/config.php -o /api/config.php;
               bye;
@@ -150,6 +148,25 @@ jobs:
 
           echo "API health check failed after all retries."
           exit 1
+
+      - name: Upload DaData server configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
+          set ftp:ssl-force true
+          set ftp:ssl-protect-data true
+          set ssl:verify-certificate true
+          set net:max-retries 6
+          set net:timeout 20
+          set net:reconnect-interval-base 5
+          set xfer:clobber true
+          set cmd:fail-exit true
+          put deploy-api/dadata-client.php -o /api/dadata-client.php
+          put deploy-api/dadata.local.php -o /api/dadata.local.php
+          put deploy-api/dadata.local.example.php -o /api/dadata.local.example.php
+          bye
+          LFTP_COMMANDS
 
       - name: Upload public files to Beget
         if: steps.prepare.outputs.upload_public == 'true'
