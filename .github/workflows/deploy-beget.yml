@@ -131,20 +131,20 @@ jobs:
             fi
 
             echo "API health check failed on attempt $attempt; uploading API again."
-            lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
-            set ftp:ssl-force true
-            set ftp:ssl-protect-data true
-            set ssl:verify-certificate true
-            set net:max-retries 6
-            set net:timeout 20
-            set net:reconnect-interval-base 5
-            set xfer:clobber true
-            put deploy-api/.htaccess -o /api/.htaccess
-            put deploy-api/dadata.local.php -o /api/dadata.local.php
-            put deploy-api/index.php -o /api/index.php
-            put deploy-api/config.php -o /api/config.php
-            bye
-            LFTP_COMMANDS
+            lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" -e "
+              set ftp:ssl-force true;
+              set ftp:ssl-protect-data true;
+              set ssl:verify-certificate true;
+              set net:max-retries 6;
+              set net:timeout 20;
+              set net:reconnect-interval-base 5;
+              set xfer:clobber true;
+              put deploy-api/.htaccess -o /api/.htaccess;
+              put deploy-api/dadata.local.php -o /api/dadata.local.php;
+              put deploy-api/index.php -o /api/index.php;
+              put deploy-api/config.php -o /api/config.php;
+              bye;
+            "
             sleep 10
           done
 
