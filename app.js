@@ -2617,7 +2617,6 @@ async function saveContractRegistryEntry(data, status, options = {}) {
 
 async function saveDraft() {
   const data = collectData();
-  localStorage.setItem(window.ManagerAuth.storageKey("dadataToken"), getField("dadataToken").value);
   const registryNumber = data.contractNumber || anonymousDraftRegistryNumber();
   try {
     await saveContractRegistryEntry(data, "draft", { number: registryNumber });
@@ -2666,9 +2665,7 @@ function loadDraftData(data) {
 }
 
 function loadDraft() {
-  const token = localStorage.getItem(window.ManagerAuth.storageKey("dadataToken"));
-  if (token) setField("dadataToken", token);
-
+  localStorage.removeItem(window.ManagerAuth.storageKey("dadataToken"));
   const registryData = window.ContractRegistry?.getContractToOpen();
   if (registryData) {
     loadDraftData(registryData);
@@ -2679,32 +2676,29 @@ function loadDraft() {
 
 async function lookupInn() {
   const inn = getField("customerInn").value.trim();
-  const token = getField("dadataToken").value.trim();
 
   if (!inn) {
     alert("Введите ИНН заказчика.");
     return;
   }
 
-  if (!token) {
-    alert("Для автоматического поиска нужен DaData API token. Пока можно заполнить реквизиты вручную.");
-    return;
-  }
-
   try {
-    const response = await fetch("https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/party", {
+    const response = await fetch("/api/dadata/party", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Token ${token}`,
       },
       body: JSON.stringify({ query: inn }),
     });
 
-    if (!response.ok) throw new Error("DaData request failed");
+    const result = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      window.location.replace("login.html");
+      return;
+    }
+    if (!response.ok) throw new Error(result.error || "Не удалось выполнить поиск по ИНН.");
 
-    const result = await response.json();
-    const company = result.suggestions?.[0];
+    const company = result.suggestion;
     if (!company) {
       alert("Компания по этому ИНН не найдена.");
       return;
@@ -2715,9 +2709,8 @@ async function lookupInn() {
     setField("customerAddress", company.data.address?.unrestricted_value);
     setField("customerOgrn", company.data.ogrn);
     setField("customerDirector", company.data.management?.name);
-    localStorage.setItem(window.ManagerAuth.storageKey("dadataToken"), token);
-  } catch {
-    alert("Не удалось получить данные по ИНН. Проверьте токен или заполните реквизиты вручную.");
+  } catch (error) {
+    alert(error.message || "Не удалось получить данные по ИНН. Заполните реквизиты вручную.");
   }
 }
 

@@ -11,7 +11,7 @@ AddType application/json .json
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
-  RewriteRule ^api/(health|contracts-registry|tech-presets|users|auth/(?:login|logout|session))/?$ api/index.php?route=$1 [QSA,L]
+  RewriteRule ^api/(health|contracts-registry|tech-presets|users|dadata/party|auth/(?:login|logout|session))/?$ api/index.php?route=$1 [QSA,L]
 </IfModule>
 
 <IfModule mod_headers.c>

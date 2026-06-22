@@ -34,6 +34,7 @@ jobs:
       FTP_SERVER: ${{ secrets.BEGET_FTP_SERVER }}
       FTP_USERNAME: ${{ secrets.BEGET_FTP_USERNAME }}
       FTP_PASSWORD: ${{ secrets.BEGET_FTP_PASSWORD }}
+      DADATA_API_TOKEN: ${{ secrets.DADATA_API_TOKEN }}
 
     steps:
       - name: Checkout repository
@@ -47,7 +48,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p deploy-api deploy-public
-          cp api/.htaccess api/config.php api/config.local.example.php api/index.php deploy-api/
+          cp api/.htaccess api/config.php api/config.local.example.php api/dadata.local.example.php api/index.php deploy-api/
+          printf "<?php\n\nreturn ['dadata_token' => '%s'];\n" "$DADATA_API_TOKEN" > deploy-api/dadata.local.php
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             files=(
@@ -87,6 +89,7 @@ jobs:
           test -n "$FTP_SERVER"
           test -n "$FTP_USERNAME"
           test -n "$FTP_PASSWORD"
+          test -n "$DADATA_API_TOKEN"
 
       - name: Install FTP client
         shell: bash
@@ -107,10 +110,12 @@ jobs:
           set net:reconnect-interval-base 5
           set xfer:clobber true
           mkdir -p /api
+          put deploy-api/.htaccess -o /api/.htaccess
+          put deploy-api/dadata.local.php -o /api/dadata.local.php
           put deploy-api/index.php -o /api/index.php
           put deploy-api/config.php -o /api/config.php
           put deploy-api/config.local.example.php -o /api/config.local.example.php
-          put deploy-api/.htaccess -o /api/.htaccess
+          put deploy-api/dadata.local.example.php -o /api/dadata.local.example.php
           bye
           LFTP_COMMANDS
 

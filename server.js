@@ -212,6 +212,35 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (req.method === "POST" && pathname === "/api/dadata/party") {
+    await requireUser(req);
+    const body = await readJsonBody(req);
+    const inn = String(body.query || "").trim();
+    if (!/^(?:[0-9]{10}|[0-9]{12})$/.test(inn)) {
+      throw Object.assign(new Error("Введите корректный ИНН из 10 или 12 цифр."), { status: 400 });
+    }
+    const dadataToken = String(process.env.DADATA_API_TOKEN || "").trim();
+    if (!dadataToken) {
+      throw Object.assign(new Error("Поиск по ИНН временно не настроен."), { status: 503 });
+    }
+    const response = await fetch("https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/party", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Token ${dadataToken}`,
+      },
+      body: JSON.stringify({ query: inn }),
+    });
+    if (!response.ok) {
+      console.error(`DaData request failed with status ${response.status}`);
+      throw Object.assign(new Error("Не удалось получить данные по ИНН. Заполните реквизиты вручную."), { status: 502 });
+    }
+    const result = await response.json();
+    sendJson(res, 200, { suggestion: Array.isArray(result.suggestions) ? result.suggestions[0] || null : null });
+    return;
+  }
+
   if (pathname === "/api/users") {
     const admin = await requireAdmin(req);
     let users = await readJson(usersPath);

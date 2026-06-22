@@ -1,5 +1,5 @@
 Options -Indexes
 
-<FilesMatch "^(config(?:\.local(?:\.example)?)?\.php|runtime\.php|.*\.sql)$">
+<FilesMatch "^(config(?:\.local(?:\.example)?)?\.php|dadata\.local(?:\.example)?\.php|runtime\.php|.*\.sql)$">
   Require all denied
 </FilesMatch>
