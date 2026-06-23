@@ -192,7 +192,9 @@ jobs:
           set net:reconnect-interval-base 3
           set xfer:clobber true
           set cmd:fail-exit true
+          set cmd:fail-exit false
           mkdir -p /assets/vendor
+          set cmd:fail-exit true
           put deploy-public/assets/vendor/fflate.min.js -o /assets/vendor/fflate.min.js
           mirror --reverse --verbose --parallel=1 --no-perms --exclude-glob assets/vendor/fflate.min.js deploy-public/ /
           bye
