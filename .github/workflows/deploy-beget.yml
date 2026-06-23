@@ -187,9 +187,13 @@ jobs:
           set ftp:ssl-force true
           set ftp:ssl-protect-data true
           set ssl:verify-certificate true
-          set net:max-retries 6
-          set net:timeout 20
-          set net:reconnect-interval-base 5
-          mirror --reverse --verbose --parallel=1 --no-perms deploy-public/ /
+          set net:max-retries 12
+          set net:timeout 60
+          set net:reconnect-interval-base 3
+          set xfer:clobber true
+          set cmd:fail-exit true
+          mkdir -p /assets/vendor
+          put deploy-public/assets/vendor/fflate.min.js -o /assets/vendor/fflate.min.js
+          mirror --reverse --verbose --parallel=1 --no-perms --exclude-glob assets/vendor/fflate.min.js deploy-public/ /
           bye
           LFTP_COMMANDS
