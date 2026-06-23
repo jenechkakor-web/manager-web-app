@@ -2746,8 +2746,15 @@ document.querySelector("#downloadContractButton").addEventListener("click", asyn
   } catch (error) {
     console.error(error);
     const message = error?.message || "";
+    const isSignatureSealError =
+      message.includes("assets/ip-") ||
+      message.includes("assets/ooo-") ||
+      message.toLowerCase().includes("signature") ||
+      message.toLowerCase().includes("stamp") ||
+      message.includes("подпис") ||
+      message.includes("печат");
     alert(
-      message.includes("подпись") || message.includes("печать")
+      isSignatureSealError
         ? message
         : "Не удалось прочитать шаблон договора. Откройте приложение через локальный сервер, а не напрямую из файла.",
     );

@@ -66,7 +66,16 @@ jobs:
           else
             mapfile -t files < <(git diff --name-only --diff-filter=ACMR \
               "${{ github.event.before }}" "${{ github.sha }}")
-            files+=("index.html" "app.js" "assets/vendor/fflate.min.js" "assets/vendor/fflate.LICENSE")
+            files+=(
+              "index.html"
+              "app.js"
+              "assets/ip-signature.png"
+              "assets/ip-stamp.png"
+              "assets/ooo-signature.png"
+              "assets/ooo-stamp.png"
+              "assets/vendor/fflate.min.js"
+              "assets/vendor/fflate.LICENSE"
+            )
           fi
 
           upload_public=false
