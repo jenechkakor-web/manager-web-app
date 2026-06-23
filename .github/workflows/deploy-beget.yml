@@ -73,7 +73,7 @@ jobs:
               "assets/ip-stamp.png"
               "assets/ooo-signature.png"
               "assets/ooo-stamp.png"
-              "assets/vendor/fflate.min.js"
+              "assets/vendor/fflate.js"
               "assets/vendor/fflate.LICENSE"
             )
           fi
@@ -195,7 +195,7 @@ jobs:
           set cmd:fail-exit false
           mkdir -p /assets/vendor
           set cmd:fail-exit true
-          put deploy-public/assets/vendor/fflate.min.js -o /assets/vendor/fflate.min.js
-          mirror --reverse --verbose --parallel=1 --no-perms --exclude-glob assets/vendor/fflate.min.js deploy-public/ /
+          put deploy-public/assets/vendor/fflate.js -o /assets/vendor/fflate.js
+          mirror --reverse --verbose --parallel=1 --no-perms --exclude-glob assets/vendor/fflate.js deploy-public/ /
           bye
           LFTP_COMMANDS
