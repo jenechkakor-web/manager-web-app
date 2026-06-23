@@ -1578,12 +1578,27 @@ function downloadDocx(filename, blob) {
   URL.revokeObjectURL(url);
 }
 
-async function inflateRaw(bytes) {
-  if (!("DecompressionStream" in window)) {
-    throw new Error("Browser does not support DOCX template decompression");
+function inflateRawWithFflate(bytes, expectedSize = 0) {
+  if (!window.fflate?.inflateSync) return null;
+  const options = expectedSize > 0 ? { out: new Uint8Array(expectedSize) } : undefined;
+  return window.fflate.inflateSync(bytes, options);
+}
+
+async function inflateRaw(bytes, expectedSize = 0) {
+  if ("DecompressionStream" in window) {
+    try {
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    } catch (error) {
+      const inflated = inflateRawWithFflate(bytes, expectedSize);
+      if (inflated) return inflated;
+      throw error;
+    }
   }
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+
+  const inflated = inflateRawWithFflate(bytes, expectedSize);
+  if (inflated) return inflated;
+  throw new Error("Browser does not support DOCX template decompression");
 }
 
 async function unzipDocx(buffer) {
@@ -1605,6 +1620,11 @@ async function unzipDocx(buffer) {
       (bytes[offset + 19] << 8) |
       (bytes[offset + 20] << 16) |
       (bytes[offset + 21] << 24);
+    const uncompressedSize =
+      bytes[offset + 22] |
+      (bytes[offset + 23] << 8) |
+      (bytes[offset + 24] << 16) |
+      (bytes[offset + 25] << 24);
     const fileNameLength = bytes[offset + 26] | (bytes[offset + 27] << 8);
     const extraLength = bytes[offset + 28] | (bytes[offset + 29] << 8);
     const nameStart = offset + 30;
@@ -1613,7 +1633,7 @@ async function unzipDocx(buffer) {
     const dataEnd = dataStart + compressedSize;
     const name = new TextDecoder().decode(bytes.slice(nameStart, nameEnd));
     const compressed = bytes.slice(dataStart, dataEnd);
-    const content = method === 8 ? await inflateRaw(compressed) : compressed;
+    const content = method === 8 ? await inflateRaw(compressed, uncompressedSize) : compressed;
     files.push({ name, content });
     offset = dataEnd;
   }
