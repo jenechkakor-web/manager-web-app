@@ -66,6 +66,7 @@ jobs:
           else
             mapfile -t files < <(git diff --name-only --diff-filter=ACMR \
               "${{ github.event.before }}" "${{ github.sha }}")
+            files+=("assets/vendor/fflate.min.js" "assets/vendor/fflate.LICENSE")
           fi
 
           upload_public=false
@@ -180,6 +181,6 @@ jobs:
           set net:max-retries 6
           set net:timeout 20
           set net:reconnect-interval-base 5
-          mirror --reverse --verbose --parallel=1 deploy-public/ /
+          mirror --reverse --verbose --parallel=1 --no-perms deploy-public/ /
           bye
           LFTP_COMMANDS
