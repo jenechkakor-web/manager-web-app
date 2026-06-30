@@ -113,33 +113,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for attempt in 1 2 3; do
-            if lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
-          set ftp:ssl-force true
-          set ftp:ssl-protect-data true
-          set ssl:verify-certificate true
-          set net:max-retries 6
-          set net:timeout 20
-          set net:reconnect-interval-base 5
-          set xfer:clobber true
-          set cmd:fail-exit true
-          put deploy-api/.htaccess -o /api/.htaccess.uploading
-          mv /api/.htaccess.uploading /api/.htaccess
-          put deploy-api/index.php -o /api/index.php.uploading
-          mv /api/index.php.uploading /api/index.php
-          put deploy-api/config.php -o /api/config.php.uploading
-          mv /api/config.php.uploading /api/config.php
-          put deploy-api/config.local.example.php -o /api/config.local.example.php.uploading
-          mv /api/config.local.example.php.uploading /api/config.local.example.php
-          bye
-          LFTP_COMMANDS
-            then
-              exit 0
-            fi
-            echo "Core API upload failed on attempt $attempt. Retrying..."
-            sleep 10
-          done
-          exit 1
+          upload_core_file() {
+            local source="$1"
+            local destination="$2"
+            for attempt in 1 2 3; do
+              if lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" -e "
+                set ftp:ssl-force true;
+                set ftp:ssl-protect-data true;
+                set ssl:verify-certificate true;
+                set net:max-retries 6;
+                set net:timeout 20;
+                set net:reconnect-interval-base 5;
+                set xfer:clobber true;
+                set cmd:fail-exit true;
+                put $source -o $destination.uploading;
+                mv $destination.uploading $destination;
+                bye;
+              "; then
+                return 0
+              fi
+              echo "Upload of $source failed on attempt $attempt. Retrying..."
+              sleep 10
+            done
+            return 1
+          }
+
+          upload_core_file deploy-api/index.php /api/index.php
+          upload_core_file deploy-api/.htaccess /api/.htaccess
+          upload_core_file deploy-api/config.php /api/config.php
+          upload_core_file deploy-api/config.local.example.php /api/config.local.example.php
 
       - name: Verify API deployment
         shell: bash
