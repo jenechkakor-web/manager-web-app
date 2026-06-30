@@ -12,6 +12,11 @@ const port = Number(process.env.PORT || 4173);
 const adminLogin = process.env.ADMIN_LOGIN || "admin";
 const adminPassword = process.env.ADMIN_PASSWORD || "admin2026";
 const sessions = new Map();
+const SOURCE_OPTIONS = ["Директ", "Агент", "Повтор", "Сарафан", "Авито", "Парсинг", "SEO", "Профи.ру"];
+const PAYMENT_STATUS_OPTIONS = ["Да", "Предоплата", "Планируется"];
+const PAYMENT_TYPE_OPTIONS = ["ИП", "ООО", "Наличка"];
+const CLOSING_DOCS_OPTIONS = ["Отправлены", "Не отправлены", "Не нужно"];
+const BONUS_TYPE_OPTIONS = ["12%", "10%", "7%", "5%", "4%", "3%", "от прибыли", "оклад"];
 
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
@@ -73,6 +78,38 @@ function normalizePresets(source) {
     .filter((entry) => entry.title && entry.description);
 }
 
+function roundMoney(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+function normalizeChoice(value, options, fallback) {
+  return options.includes(value) ? value : fallback;
+}
+
+function templatePrepayment(data, amount) {
+  const percent = Number(data?.paymentTerms);
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100) return 0;
+  return roundMoney((amount * percent) / 100);
+}
+
+function normalizeRegistryMeta(entry, data, amount) {
+  const source = entry?.registryMeta && typeof entry.registryMeta === "object" ? entry.registryMeta : entry || {};
+  const rawPrepayment = source.prepayment;
+  const prepayment = rawPrepayment === undefined || rawPrepayment === null || rawPrepayment === ""
+    ? templatePrepayment(data, amount)
+    : roundMoney(Math.max(0, Math.min(amount, Number(rawPrepayment) || 0)));
+  return {
+    source: normalizeChoice(source.source, SOURCE_OPTIONS, ""),
+    paymentStatus: normalizeChoice(source.paymentStatus, PAYMENT_STATUS_OPTIONS, "Планируется"),
+    prepayment,
+    prepaymentOverridden: source.prepaymentOverridden === true,
+    paymentType: normalizeChoice(source.paymentType, PAYMENT_TYPE_OPTIONS, ""),
+    closingDocs: normalizeChoice(source.closingDocs, CLOSING_DOCS_OPTIONS, "Не отправлены"),
+    bonusType: normalizeChoice(source.bonusType, BONUS_TYPE_OPTIONS, "12%"),
+    bonusAmount: roundMoney(Math.max(0, Number(source.bonusAmount) || 0)),
+  };
+}
+
 function normalizeRecord(entry, ownerId = null) {
   const data = entry?.data && typeof entry.data === "object" ? entry.data : {};
   const number = String(entry?.number || entry?.contractNumber || data.contractNumber || "").trim();
@@ -86,6 +123,7 @@ function normalizeRecord(entry, ownerId = null) {
     amount: Number.isFinite(amount) ? amount : 0,
     status: entry?.status === "exported" ? "exported" : "draft",
     updatedAt: String(entry?.updatedAt || new Date().toISOString()),
+    registryMeta: normalizeRegistryMeta(entry, data, Number.isFinite(amount) ? amount : 0),
     data,
   };
 }
@@ -312,6 +350,26 @@ async function handleApi(req, res, pathname) {
     }
     if (req.method === "POST") {
       const body = await readJsonBody(req);
+      if (body.action === "update-meta") {
+        const number = String(body.number || "").trim();
+        const existing = records.find((record) => record.number === number);
+        if (!existing) throw Object.assign(new Error("Договор не найден в реестре."), { status: 404 });
+        if (user.role !== "admin" && existing.ownerId !== user.id) {
+          throw Object.assign(new Error("Нельзя изменить договор другого пользователя."), { status: 403 });
+        }
+        const fields = body.fields && typeof body.fields === "object" ? body.fields : {};
+        const mergedFields = { ...existing.registryMeta, ...fields };
+        if (Object.prototype.hasOwnProperty.call(fields, "prepayment")) mergedFields.prepaymentOverridden = true;
+        existing.registryMeta = normalizeRegistryMeta(
+          { registryMeta: mergedFields },
+          existing.data,
+          existing.amount,
+        );
+        existing.updatedAt = new Date().toISOString();
+        await writeJson(registryPath, records);
+        sendJson(res, 200, { record: existing });
+        return;
+      }
       if (body.action === "delete") {
         records = records.filter(
           (record) => record.number !== String(body.number || "").trim() || (user.role !== "admin" && record.ownerId !== user.id),
@@ -327,6 +385,14 @@ async function handleApi(req, res, pathname) {
         throw Object.assign(new Error("Нельзя изменить договор другого пользователя."), { status: 403 });
       }
       incoming.ownerId = existing?.ownerId || user.id;
+      if (existing && body.preserveRegistryMeta !== false) {
+        incoming.registryMeta = {
+          ...existing.registryMeta,
+          prepayment: existing.registryMeta.prepaymentOverridden
+            ? existing.registryMeta.prepayment
+            : templatePrepayment(incoming.data, incoming.amount),
+        };
+      }
       records = [incoming, ...records.filter((record) => record.number !== incoming.number)];
       await writeJson(registryPath, records);
       sendJson(res, 200, { saved: true });

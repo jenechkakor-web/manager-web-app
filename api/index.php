@@ -100,6 +100,7 @@ function initialize_database(PDO $pdo, array $config)
         status VARCHAR(20) NOT NULL DEFAULT 'draft',
         updated_at VARCHAR(40) NOT NULL,
         data_json LONGTEXT NOT NULL,
+        registry_meta_json LONGTEXT NULL,
         KEY owner_id (owner_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     if (!has_column($pdo, 'manager_contracts', 'owner_id')) {
@@ -107,6 +108,14 @@ function initialize_database(PDO $pdo, array $config)
     }
     if (!has_index($pdo, 'manager_contracts', 'owner_id')) {
         $pdo->exec('ALTER TABLE manager_contracts ADD INDEX owner_id (owner_id)');
+    }
+    if (!has_column($pdo, 'manager_contracts', 'registry_meta_json')) {
+        $pdo->exec('CREATE TABLE IF NOT EXISTS manager_contracts_backup_20260630_registry LIKE manager_contracts');
+        $pdo->exec('INSERT IGNORE INTO manager_contracts_backup_20260630_registry
+            (record_number, owner_id, contract_date, counterparty, amount, status, updated_at, data_json)
+            SELECT record_number, owner_id, contract_date, counterparty, amount, status, updated_at, data_json
+            FROM manager_contracts');
+        $pdo->exec('ALTER TABLE manager_contracts ADD COLUMN registry_meta_json LONGTEXT NULL AFTER data_json');
     }
     $statement = $pdo->prepare('UPDATE manager_contracts SET owner_id = :admin_id WHERE owner_id IS NULL');
     $statement->execute([':admin_id' => $adminId]);
@@ -168,6 +177,44 @@ function require_admin(PDO $pdo)
     return $user;
 }
 
+function round_money($value)
+{
+    return round((float) $value, 2);
+}
+
+function normalize_choice($value, array $options, $fallback)
+{
+    return in_array($value, $options, true) ? $value : $fallback;
+}
+
+function template_prepayment(array $data, $amount)
+{
+    $percent = isset($data['paymentTerms']) && is_numeric($data['paymentTerms']) ? (float) $data['paymentTerms'] : null;
+    if ($percent === null || $percent < 0 || $percent > 100) {
+        return 0;
+    }
+    return round_money(((float) $amount * $percent) / 100);
+}
+
+function normalize_registry_meta(array $record, array $data, $amount)
+{
+    $source = isset($record['registryMeta']) && is_array($record['registryMeta']) ? $record['registryMeta'] : $record;
+    $rawPrepayment = array_key_exists('prepayment', $source) ? $source['prepayment'] : null;
+    $prepayment = $rawPrepayment === null || $rawPrepayment === ''
+        ? template_prepayment($data, $amount)
+        : round_money(max(0, min((float) $amount, (float) $rawPrepayment)));
+    return [
+        'source' => normalize_choice(isset($source['source']) ? $source['source'] : '', ['Директ', 'Агент', 'Повтор', 'Сарафан', 'Авито', 'Парсинг', 'SEO', 'Профи.ру'], ''),
+        'paymentStatus' => normalize_choice(isset($source['paymentStatus']) ? $source['paymentStatus'] : '', ['Да', 'Предоплата', 'Планируется'], 'Планируется'),
+        'prepayment' => $prepayment,
+        'prepaymentOverridden' => isset($source['prepaymentOverridden']) && $source['prepaymentOverridden'] === true,
+        'paymentType' => normalize_choice(isset($source['paymentType']) ? $source['paymentType'] : '', ['ИП', 'ООО', 'Наличка'], ''),
+        'closingDocs' => normalize_choice(isset($source['closingDocs']) ? $source['closingDocs'] : '', ['Отправлены', 'Не отправлены', 'Не нужно'], 'Не отправлены'),
+        'bonusType' => normalize_choice(isset($source['bonusType']) ? $source['bonusType'] : '', ['12%', '10%', '7%', '5%', '4%', '3%', 'от прибыли', 'оклад'], '12%'),
+        'bonusAmount' => round_money(max(0, isset($source['bonusAmount']) ? (float) $source['bonusAmount'] : 0)),
+    ];
+}
+
 function normalize_record(array $record)
 {
     $data = isset($record['data']) && is_array($record['data']) ? $record['data'] : [];
@@ -195,6 +242,7 @@ function normalize_record(array $record)
         'amount' => is_finite($amount) ? $amount : 0,
         'status' => (isset($record['status']) ? $record['status'] : '') === 'exported' ? 'exported' : 'draft',
         'updatedAt' => (string) (isset($record['updatedAt']) ? $record['updatedAt'] : gmdate('c')),
+        'registryMeta' => normalize_registry_meta($record, $data, is_finite($amount) ? $amount : 0),
         'data' => $data,
     ];
 }
@@ -239,14 +287,17 @@ function fetch_records(PDO $pdo, array $user)
     $statement->execute($params);
     return array_map(static function (array $row) {
         $data = json_decode((string) $row['data_json'], true);
+        $registryMeta = json_decode(isset($row['registry_meta_json']) ? (string) $row['registry_meta_json'] : '', true);
+        $amount = (float) $row['amount'];
         return [
             'number' => (string) $row['record_number'],
             'date' => (string) $row['contract_date'],
             'counterparty' => (string) $row['counterparty'],
-            'amount' => (float) $row['amount'],
+            'amount' => $amount,
             'status' => $row['status'] === 'exported' ? 'exported' : 'draft',
             'updatedAt' => (string) $row['updated_at'],
             'ownerLogin' => isset($row['owner_login']) ? (string) $row['owner_login'] : 'Удалённый пользователь',
+            'registryMeta' => normalize_registry_meta(['registryMeta' => is_array($registryMeta) ? $registryMeta : []], is_array($data) ? $data : [], $amount),
             'data' => is_array($data) ? $data : [],
         ];
     }, $statement->fetchAll());
@@ -263,10 +314,11 @@ function save_record(PDO $pdo, array $record, array $user)
     $ownerId = $existingOwner === false ? $user['id'] : (int) $existingOwner;
 
     $statement = $pdo->prepare('INSERT INTO manager_contracts
-        (record_number, owner_id, contract_date, counterparty, amount, status, updated_at, data_json)
-        VALUES (:number, :owner_id, :date, :counterparty, :amount, :status, :updated_at, :data_json)
+        (record_number, owner_id, contract_date, counterparty, amount, status, updated_at, data_json, registry_meta_json)
+        VALUES (:number, :owner_id, :date, :counterparty, :amount, :status, :updated_at, :data_json, :registry_meta_json)
         ON DUPLICATE KEY UPDATE contract_date = VALUES(contract_date), counterparty = VALUES(counterparty),
-        amount = VALUES(amount), status = VALUES(status), updated_at = VALUES(updated_at), data_json = VALUES(data_json)');
+        amount = VALUES(amount), status = VALUES(status), updated_at = VALUES(updated_at), data_json = VALUES(data_json),
+        registry_meta_json = VALUES(registry_meta_json)');
     $statement->execute([
         ':number' => $record['number'],
         ':owner_id' => $ownerId,
@@ -276,6 +328,7 @@ function save_record(PDO $pdo, array $record, array $user)
         ':status' => $record['status'],
         ':updated_at' => $record['updatedAt'],
         ':data_json' => json_encode($record['data'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ':registry_meta_json' => json_encode($record['registryMeta'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
     ]);
 }
 
@@ -509,6 +562,47 @@ try {
         require_same_origin();
         $user = require_user($pdo);
         $body = request_json();
+        if ((isset($body['action']) ? $body['action'] : '') === 'update-meta') {
+            $number = trim(isset($body['number']) ? (string) $body['number'] : '');
+            $statement = $pdo->prepare('SELECT owner_id, amount, data_json, registry_meta_json
+                FROM manager_contracts WHERE record_number = :number LIMIT 1');
+            $statement->execute([':number' => $number]);
+            $row = $statement->fetch();
+            if (!$row) {
+                respond(['error' => 'Договор не найден в реестре.'], 404);
+            }
+            if ($user['role'] !== 'admin' && (int) $row['owner_id'] !== $user['id']) {
+                respond(['error' => 'Нельзя изменить договор другого пользователя.'], 403);
+            }
+            $data = json_decode((string) $row['data_json'], true);
+            $currentMeta = json_decode(isset($row['registry_meta_json']) ? (string) $row['registry_meta_json'] : '', true);
+            $fields = isset($body['fields']) && is_array($body['fields']) ? $body['fields'] : [];
+            $mergedFields = array_merge(is_array($currentMeta) ? $currentMeta : [], $fields);
+            if (array_key_exists('prepayment', $fields)) {
+                $mergedFields['prepaymentOverridden'] = true;
+            }
+            $registryMeta = normalize_registry_meta(
+                ['registryMeta' => $mergedFields],
+                is_array($data) ? $data : [],
+                (float) $row['amount']
+            );
+            $updatedAt = gmdate('c');
+            $statement = $pdo->prepare('UPDATE manager_contracts
+                SET registry_meta_json = :registry_meta_json, updated_at = :updated_at WHERE record_number = :number');
+            $statement->execute([
+                ':registry_meta_json' => json_encode($registryMeta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                ':updated_at' => $updatedAt,
+                ':number' => $number,
+            ]);
+            $updatedRecord = null;
+            foreach (fetch_records($pdo, $user) as $candidate) {
+                if ($candidate['number'] === $number) {
+                    $updatedRecord = $candidate;
+                    break;
+                }
+            }
+            respond(['record' => $updatedRecord]);
+        }
         if ((isset($body['action']) ? $body['action'] : '') === 'delete') {
             if ($user['role'] === 'admin') {
                 $statement = $pdo->prepare('DELETE FROM manager_contracts WHERE record_number = :number');
@@ -525,6 +619,21 @@ try {
         $record = isset($body['record']) && is_array($body['record']) ? normalize_record($body['record']) : null;
         if (!$record) {
             respond(['error' => 'Для записи нужен номер договора или черновика.'], 400);
+        }
+        if (!isset($body['preserveRegistryMeta']) || $body['preserveRegistryMeta'] !== false) {
+            $statement = $pdo->prepare('SELECT registry_meta_json FROM manager_contracts WHERE record_number = :number LIMIT 1');
+            $statement->execute([':number' => $record['number']]);
+            $existingMeta = json_decode((string) $statement->fetchColumn(), true);
+            if (is_array($existingMeta)) {
+                if (!isset($existingMeta['prepaymentOverridden']) || $existingMeta['prepaymentOverridden'] !== true) {
+                    $existingMeta['prepayment'] = template_prepayment($record['data'], $record['amount']);
+                }
+                $record['registryMeta'] = normalize_registry_meta(
+                    ['registryMeta' => $existingMeta],
+                    $record['data'],
+                    $record['amount']
+                );
+            }
         }
         save_record($pdo, $record, $user);
         respond(['saved' => true]);

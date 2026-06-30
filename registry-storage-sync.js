@@ -2,9 +2,46 @@
   const SERVER_REGISTRY_URL = "/api/contracts-registry";
   const LOCAL_KEY = "managerContractsRegistry";
   const SELECTED_CONTRACT_KEY = "managerContractFromRegistry";
+  const SOURCE_OPTIONS = ["Директ", "Агент", "Повтор", "Сарафан", "Авито", "Парсинг", "SEO", "Профи.ру"];
+  const PAYMENT_STATUS_OPTIONS = ["Да", "Предоплата", "Планируется"];
+  const PAYMENT_TYPE_OPTIONS = ["ИП", "ООО", "Наличка"];
+  const CLOSING_DOCS_OPTIONS = ["Отправлены", "Не отправлены", "Не нужно"];
+  const BONUS_TYPE_OPTIONS = ["12%", "10%", "7%", "5%", "4%", "3%", "от прибыли", "оклад"];
 
   function normalizeContractNumber(value) {
     return String(value || "").trim();
+  }
+
+  function roundMoney(value) {
+    return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+  }
+
+  function choice(value, options, fallback) {
+    return options.includes(value) ? value : fallback;
+  }
+
+  function templatePrepayment(data, amount) {
+    const percent = Number(data?.paymentTerms);
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) return 0;
+    return roundMoney((amount * percent) / 100);
+  }
+
+  function normalizeRegistryMeta(record, data, amount) {
+    const source = record?.registryMeta && typeof record.registryMeta === "object" ? record.registryMeta : record || {};
+    const rawPrepayment = source.prepayment;
+    const prepayment = rawPrepayment === undefined || rawPrepayment === null || rawPrepayment === ""
+      ? templatePrepayment(data, amount)
+      : roundMoney(Math.max(0, Math.min(amount, Number(rawPrepayment) || 0)));
+    return {
+      source: choice(source.source, SOURCE_OPTIONS, ""),
+      paymentStatus: choice(source.paymentStatus, PAYMENT_STATUS_OPTIONS, "Планируется"),
+      prepayment,
+      prepaymentOverridden: source.prepaymentOverridden === true,
+      paymentType: choice(source.paymentType, PAYMENT_TYPE_OPTIONS, ""),
+      closingDocs: choice(source.closingDocs, CLOSING_DOCS_OPTIONS, "Не отправлены"),
+      bonusType: choice(source.bonusType, BONUS_TYPE_OPTIONS, "12%"),
+      bonusAmount: roundMoney(Math.max(0, Number(source.bonusAmount) || 0)),
+    };
   }
 
   function normalizeRecord(record) {
@@ -12,14 +49,16 @@
     if (!number) return null;
     const data = record.data && typeof record.data === "object" ? record.data : {};
     const amount = Number(record.amount ?? data.totals?.grandTotal ?? 0);
+    const normalizedAmount = Number.isFinite(amount) ? amount : 0;
     return {
       number,
       date: String(record.date || data.contractDate || ""),
       counterparty: String(record.counterparty || data.customer?.name || data.customer?.inn || ""),
-      amount: Number.isFinite(amount) ? amount : 0,
+      amount: normalizedAmount,
       status: record.status === "exported" ? "exported" : "draft",
       updatedAt: String(record.updatedAt || new Date().toISOString()),
       ownerLogin: String(record.ownerLogin || ""),
+      registryMeta: normalizeRegistryMeta(record, data, normalizedAmount),
       data,
     };
   }
@@ -55,9 +94,18 @@
     localStorage.setItem(localKey(), JSON.stringify(normalizeRecords(records)));
   }
 
-  function upsertInto(records, record) {
+  function upsertInto(records, record, preserveRegistryMeta = true) {
     const normalized = normalizeRecord(record);
     if (!normalized) return normalizeRecords(records);
+    const existing = normalizeRecords(records).find((item) => item.number.toLowerCase() === normalized.number.toLowerCase());
+    if (preserveRegistryMeta && existing) {
+      normalized.registryMeta = {
+        ...existing.registryMeta,
+        prepayment: existing.registryMeta.prepaymentOverridden
+          ? existing.registryMeta.prepayment
+          : templatePrepayment(normalized.data, normalized.amount),
+      };
+    }
     return mergeRecords([normalized], removeFrom(records, normalized.number));
   }
 
@@ -87,16 +135,39 @@
     const normalized = normalizeRecord(record);
     if (!normalized) throw new Error("Для записи в реестр нужен номер договора.");
     if (!window.ManagerAuth?.usesServerAuth) {
-      const records = upsertInto(getLocalRecords(), normalized);
+      const records = upsertInto(getLocalRecords(), normalized, true);
       setLocalRecords(records);
       return { records, remoteSaved: false };
     }
     await serverRequest({
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "upsert", record: normalized }),
+      body: JSON.stringify({ action: "upsert", record: normalized, preserveRegistryMeta: true }),
     });
     return { records: [], remoteSaved: true };
+  }
+
+  async function updateRegistryMeta(number, fields) {
+    const key = normalizeContractNumber(number).toLowerCase();
+    if (!key) throw new Error("Для обновления нужен номер договора.");
+    if (!window.ManagerAuth?.usesServerAuth) {
+      const records = getLocalRecords();
+      const record = records.find((item) => item.number.toLowerCase() === key);
+      if (!record) throw new Error("Договор не найден в реестре.");
+      const nextFields = { ...record.registryMeta, ...fields };
+      if (Object.prototype.hasOwnProperty.call(fields, "prepayment")) nextFields.prepaymentOverridden = true;
+      record.registryMeta = normalizeRegistryMeta({ registryMeta: nextFields }, record.data, record.amount);
+      record.updatedAt = new Date().toISOString();
+      const nextRecords = mergeRecords(records);
+      setLocalRecords(nextRecords);
+      return { record, records: nextRecords, remoteSaved: false };
+    }
+    const result = await serverRequest({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "update-meta", number, fields }),
+    });
+    return { record: normalizeRecord(result.record), records: [], remoteSaved: true };
   }
 
   async function deleteRecord(number) {
@@ -152,8 +223,14 @@
     loadRegistry,
     upsertRecord,
     deleteRecord,
+    updateRegistryMeta,
     recordFromContractData,
     setContractToOpen,
     getContractToOpen,
+    SOURCE_OPTIONS,
+    PAYMENT_STATUS_OPTIONS,
+    PAYMENT_TYPE_OPTIONS,
+    CLOSING_DOCS_OPTIONS,
+    BONUS_TYPE_OPTIONS,
   };
 })();

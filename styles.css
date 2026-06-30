@@ -142,6 +142,7 @@ button {
 
 .form-area {
   display: grid;
+  min-width: 0;
   gap: 16px;
   padding: 18px;
 }
@@ -247,6 +248,7 @@ h2 {
 }
 
 .panel {
+  min-width: 0;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -760,7 +762,7 @@ fieldset {
 
 .registry-table {
   width: 100%;
-  min-width: 860px;
+  min-width: 2060px;
   border-collapse: collapse;
 }
 
@@ -780,6 +782,29 @@ fieldset {
 
 .registry-table tbody tr {
   cursor: pointer;
+}
+
+.registry-table .registry-control {
+  min-width: 132px;
+  height: 34px;
+  padding-inline: 8px;
+  font-size: 13px;
+  cursor: default;
+}
+
+.registry-table .registry-money-input {
+  min-width: 124px;
+}
+
+.registry-table .registry-control:disabled {
+  color: #7c8886;
+  background: #f1f4f3;
+  cursor: not-allowed;
+}
+
+.registry-calculated {
+  white-space: nowrap;
+  font-weight: 600;
 }
 
 .registry-table tbody tr:hover {
