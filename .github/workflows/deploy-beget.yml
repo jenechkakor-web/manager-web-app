@@ -69,6 +69,10 @@ jobs:
             files+=(
               "index.html"
               "app.js"
+              "registry.html"
+              "registry-storage-sync.js"
+              "registry.js"
+              "styles.css"
               "assets/ip-signature.png"
               "assets/ip-stamp.png"
               "assets/ooo-signature.png"
@@ -109,7 +113,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
+          for attempt in 1 2 3; do
+            if lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
           set ftp:ssl-force true
           set ftp:ssl-protect-data true
           set ssl:verify-certificate true
@@ -118,12 +123,23 @@ jobs:
           set net:reconnect-interval-base 5
           set xfer:clobber true
           set cmd:fail-exit true
-          put deploy-api/.htaccess -o /api/.htaccess
-          put deploy-api/index.php -o /api/index.php
-          put deploy-api/config.php -o /api/config.php
-          put deploy-api/config.local.example.php -o /api/config.local.example.php
+          put deploy-api/.htaccess -o /api/.htaccess.uploading
+          mv /api/.htaccess.uploading /api/.htaccess
+          put deploy-api/index.php -o /api/index.php.uploading
+          mv /api/index.php.uploading /api/index.php
+          put deploy-api/config.php -o /api/config.php.uploading
+          mv /api/config.php.uploading /api/config.php
+          put deploy-api/config.local.example.php -o /api/config.local.example.php.uploading
+          mv /api/config.local.example.php.uploading /api/config.local.example.php
           bye
           LFTP_COMMANDS
+            then
+              exit 0
+            fi
+            echo "Core API upload failed on attempt $attempt. Retrying..."
+            sleep 10
+          done
+          exit 1
 
       - name: Verify API deployment
         shell: bash
