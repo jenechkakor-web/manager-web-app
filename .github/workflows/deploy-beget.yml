@@ -52,6 +52,7 @@ jobs:
           printf "<?php\n\nreturn ['dadata_token' => '%s'];\n" "$DADATA_API_TOKEN" > deploy-api/dadata.local.php
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            upload_api=true
             files=(
               .htaccess
               index.html login.html registry.html library.html users.html
@@ -66,6 +67,14 @@ jobs:
           else
             mapfile -t files < <(git diff --name-only --diff-filter=ACMR \
               "${{ github.event.before }}" "${{ github.sha }}")
+            upload_api=false
+            for file in "${files[@]}"; do
+              case "$file" in
+                api/*)
+                  upload_api=true
+                  ;;
+              esac
+            done
             files+=(
               "index.html"
               "app.js"
@@ -92,6 +101,7 @@ jobs:
                 ;;
             esac
           done
+          echo "upload_api=$upload_api" >> "$GITHUB_OUTPUT"
           echo "upload_public=$upload_public" >> "$GITHUB_OUTPUT"
 
       - name: Validate FTP secrets
@@ -101,7 +111,9 @@ jobs:
           test -n "$FTP_SERVER"
           test -n "$FTP_USERNAME"
           test -n "$FTP_PASSWORD"
-          test -n "$DADATA_API_TOKEN"
+          if [[ "${{ steps.prepare.outputs.upload_api }}" == "true" ]]; then
+            test -n "$DADATA_API_TOKEN"
+          fi
 
       - name: Install FTP client
         shell: bash
@@ -110,6 +122,7 @@ jobs:
           sudo apt-get install --yes lftp
 
       - name: Upload core API to Beget
+        if: steps.prepare.outputs.upload_api == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -144,6 +157,7 @@ jobs:
           upload_core_file deploy-api/config.local.example.php /api/config.local.example.php
 
       - name: Verify API deployment
+        if: steps.prepare.outputs.upload_api == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -176,6 +190,7 @@ jobs:
           exit 1
 
       - name: Upload DaData server configuration
+        if: steps.prepare.outputs.upload_api == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -199,7 +214,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
+          for attempt in 1 2 3; do
+            if lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
           set ftp:ssl-force true
           set ftp:ssl-protect-data true
           set ssl:verify-certificate true
@@ -211,3 +227,10 @@ jobs:
           mirror --reverse --verbose --parallel=1 --no-perms deploy-public/ /
           bye
           LFTP_COMMANDS
+            then
+              exit 0
+            fi
+            echo "Public upload failed on attempt $attempt. Retrying..."
+            sleep 10
+          done
+          exit 1
