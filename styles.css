@@ -736,9 +736,16 @@ fieldset {
 
 .registry-toolbar {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) auto;
+  grid-template-columns: minmax(240px, 1fr);
   gap: 10px;
   align-items: end;
+}
+
+.registry-filters {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(145px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .registry-admin {
@@ -762,13 +769,13 @@ fieldset {
 
 .registry-table {
   width: 100%;
-  min-width: 2060px;
+  min-width: 2280px;
   border-collapse: collapse;
 }
 
 .registry-table th,
 .registry-table td {
-  padding: 12px;
+  padding: 8px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: middle;
@@ -781,30 +788,143 @@ fieldset {
 }
 
 .registry-table tbody tr {
-  cursor: pointer;
+  cursor: default;
 }
 
 .registry-table .registry-control {
-  min-width: 132px;
-  height: 34px;
-  padding-inline: 8px;
+  width: 100%;
+  min-width: 124px;
+  height: 38px;
+  padding-inline: 10px;
   font-size: 13px;
   cursor: default;
 }
 
-.registry-table .registry-money-input {
+.registry-cell-value {
+  display: flex;
+  width: 100%;
   min-width: 124px;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  background: #fff;
+  font-size: 13px;
+  line-height: 1.25;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.registry-table .registry-control:disabled {
+.registry-cell-readonly {
+  background: #f8faf9;
+}
+
+.registry-cell-disabled {
   color: #7c8886;
   background: #f1f4f3;
-  cursor: not-allowed;
 }
 
-.registry-calculated {
-  white-space: nowrap;
+.registry-cell-editable {
+  cursor: pointer;
+}
+
+.registry-cell-editable:hover {
+  border-color: #a9c9c2;
+  background: #f2f8f6;
+}
+
+.registry-edit-mark {
+  flex: 0 0 auto;
+  color: var(--accent);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.registry-cell-editable:hover .registry-edit-mark,
+.registry-cell-editable:focus-visible .registry-edit-mark {
+  opacity: 1;
+}
+
+.registry-data-cell.is-editing {
+  background: #eaf6f3;
+  box-shadow: inset 0 0 0 1px rgba(15, 122, 104, 0.16);
+}
+
+.registry-table .registry-cell-editor {
+  border-color: var(--accent);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(15, 122, 104, 0.13);
+}
+
+.registry-number-link {
+  color: var(--accent-strong);
   font-weight: 600;
+  text-decoration: none;
+}
+
+.registry-number-link:hover {
+  border-color: var(--accent);
+  background: #eef8f5;
+  text-decoration: underline;
+}
+
+.registry-counterparty {
+  min-width: 260px;
+  max-width: 320px;
+}
+
+.registry-money-value {
+  min-width: 145px;
+  font-weight: 600;
+}
+
+.registry-cell-actions {
+  min-width: 54px;
+  justify-content: center;
+  padding: 0;
+}
+
+.payment-tone-paid {
+  color: #12613f;
+  border-color: #9fd5bb;
+  background: #e4f6ed;
+}
+
+.payment-tone-prepaid {
+  color: #75540a;
+  border-color: #e2ca82;
+  background: #fff4cf;
+}
+
+.payment-tone-planned {
+  color: #9a342d;
+  border-color: #e3aaa5;
+  background: #fde9e7;
+}
+
+.deal-tone-complete {
+  color: #12613f;
+  border-color: #b6ddc8;
+  background: #edf8f2;
+  font-weight: 700;
+}
+
+.deal-tone-active {
+  color: #75540a;
+  border-color: #ead9a8;
+  background: #fff8e6;
+  font-weight: 700;
+}
+
+.deal-tone-planned {
+  color: #6f7775;
+  font-weight: 700;
 }
 
 .registry-table tbody tr:hover {
@@ -908,6 +1028,12 @@ fieldset {
   background: #fbfcfc;
 }
 
+@media (max-width: 1200px) {
+  .registry-filters {
+    grid-template-columns: repeat(3, minmax(145px, 1fr));
+  }
+}
+
 .user-password-action {
   display: grid;
   grid-template-columns: minmax(190px, 1fr) auto;
@@ -1005,6 +1131,7 @@ fieldset {
   .library-toolbar,
   .library-group-grid,
   .registry-toolbar,
+  .registry-filters,
   .registry-admin-row,
   .tech-card-header,
   .user-create-grid,

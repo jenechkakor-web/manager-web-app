@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Реестр договоров</title>
-    <link rel="stylesheet" href="styles.css?v=20260630-registry-1" />
+    <link rel="stylesheet" href="styles.css?v=20260701-registry-2" />
   </head>
   <body>
     <main class="app-shell">
@@ -39,6 +39,28 @@
                   <input id="registrySearchInput" placeholder="Введите номер или название" />
                 </label>
               </div>
+              <div class="registry-filters" aria-label="Фильтры реестра">
+                <label>
+                  <span>Месяц</span>
+                  <select id="registryMonthFilter"><option value="">Все месяцы</option></select>
+                </label>
+                <label>
+                  <span>Оплачен</span>
+                  <select id="registryPaymentStatusFilter"><option value="">Все варианты</option></select>
+                </label>
+                <label>
+                  <span>Вид оплаты</span>
+                  <select id="registryPaymentTypeFilter"><option value="">Все варианты</option></select>
+                </label>
+                <label>
+                  <span>Закрывашки</span>
+                  <select id="registryClosingDocsFilter"><option value="">Все варианты</option></select>
+                </label>
+                <label>
+                  <span>Менеджер</span>
+                  <select id="registryManagerFilter"><option value="">Все менеджеры</option></select>
+                </label>
+              </div>
               <p class="status-line" id="registryStatus"></p>
               <div class="registry-table-wrap">
                 <table class="registry-table">
@@ -54,6 +76,7 @@
                       <th>Остаток</th>
                       <th>Вид оплаты</th>
                       <th>Закрывашки</th>
+                      <th>Статус сделки</th>
                       <th>Тип бонуса</th>
                       <th>Сумма бонуса</th>
                       <th>Статус</th>
@@ -72,6 +95,6 @@
     </main>
     <script src="auth.js?v=20260618-auth-1"></script>
     <script src="registry-storage-sync.js?v=20260630-registry-1"></script>
-    <script src="registry.js?v=20260630-registry-1"></script>
+    <script src="registry.js?v=20260701-registry-2"></script>
   </body>
 </html>
