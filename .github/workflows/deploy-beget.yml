@@ -94,6 +94,9 @@ jobs:
             case "$file" in
               .htaccess|*.html|*.js|*.css|*.docx|assets/*|templates/tech-presets.json|templates/contracts-registry.json)
                 if [[ -f "$file" ]]; then
+                  if [[ "$file" == "assets/ip-signature.png" ]]; then
+                    continue
+                  fi
                   mkdir -p "deploy-public/$(dirname "$file")"
                   cp "$file" "deploy-public/$file"
                   upload_public=true
@@ -214,63 +217,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          upload_public_file() {
-            local source="$1"
-            local relative="${source#deploy-public/}"
-            local destination="/$relative"
-            local destination_dir
-            local mkdir_command=""
-            destination_dir="$(dirname "$destination")"
-            if [[ "$destination_dir" != "/" ]]; then
-              mkdir_command="mkdir -p \"$destination_dir\";"
+          for attempt in 1 2 3; do
+            if lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
+          set ftp:ssl-force true
+          set ftp:ssl-protect-data true
+          set ssl:verify-certificate true
+          set net:max-retries 6
+          set net:timeout 20
+          set net:reconnect-interval-base 3
+          set xfer:clobber true
+          set cmd:fail-exit true
+          mirror --reverse --verbose --parallel=1 --no-perms deploy-public/ /
+          bye
+          LFTP_COMMANDS
+            then
+              exit 0
             fi
-
-            for attempt in 1 2 3; do
-              if lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" -e "
-                set ftp:ssl-force true;
-                set ftp:ssl-protect-data true;
-                set ssl:verify-certificate true;
-                set net:max-retries 6;
-                set net:timeout 20;
-                set net:reconnect-interval-base 5;
-                set xfer:clobber true;
-                set cmd:fail-exit true;
-                $mkdir_command
-                put \"$source\" -o \"$destination.uploading\";
-                mv \"$destination.uploading\" \"$destination\";
-                bye;
-              "; then
-                echo "Uploaded $relative."
-                return 0
-              fi
-              echo "Upload of $relative failed on attempt $attempt. Retrying..."
-              sleep 10
-            done
-            return 1
-          }
-
-          while IFS= read -r -d '' source; do
-            relative="${source#deploy-public/}"
-            if upload_public_file "$source"; then
-              continue
-            fi
-            if [[ "$relative" == "assets/ip-signature.png" ]]; then
-              echo "The hosting copy of $relative is unavailable; app.js will use the verified repository fallback."
-              continue
-            fi
-            exit 1
-          done < <(
-            if [[ -f deploy-public/app.js ]]; then
-              printf '%s\0' deploy-public/app.js
-            fi
-            if [[ -f deploy-public/index.html ]]; then
-              printf '%s\0' deploy-public/index.html
-            fi
-            find deploy-public -type f \
-              ! -path 'deploy-public/app.js' \
-              ! -path 'deploy-public/index.html' \
-              -print0 | sort -z
-          )
+            echo "Public upload failed on attempt $attempt. Retrying..."
+            sleep 10
+          done
+          exit 1
 
       - name: Verify signature and stamp assets
         if: steps.prepare.outputs.upload_public == 'true'
@@ -299,15 +265,22 @@ jobs:
           }
 
           verify_ip_signature() {
-            if verify_asset assets/ip-signature.png; then
-              return 0
-            fi
+            local source="assets/ip-signature.png"
             local downloaded
             downloaded="$(mktemp)"
             if curl --fail --silent --show-error --max-time 20 \
+              -H 'Cache-Control: no-cache' \
+              'https://manager.verkup.ru/assets/ip-signature.png' \
+              -o "$downloaded" \
+              && cmp --silent "$source" "$downloaded"; then
+              echo "Verified hosting copy of assets/ip-signature.png."
+              rm -f "$downloaded"
+              return 0
+            fi
+            if curl --fail --silent --show-error --max-time 20 \
               'https://raw.githubusercontent.com/jenechkakor-web/manager-web-app/main/assets/ip-signature.png' \
               -o "$downloaded" \
-              && cmp --silent deploy-public/assets/ip-signature.png "$downloaded"; then
+              && cmp --silent "$source" "$downloaded"; then
               echo "Verified repository fallback for assets/ip-signature.png."
               rm -f "$downloaded"
               return 0
