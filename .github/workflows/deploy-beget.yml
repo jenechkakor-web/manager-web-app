@@ -202,7 +202,7 @@ jobs:
           upload_ftp() {
             local source="$1"
             local destination="${2#/}"
-            curl --fail --show-error --silent --ssl-reqd \
+            curl --fail --show-error --silent --ftp-ssl-control \
               --user "$FTP_USERNAME:$FTP_PASSWORD" \
               --ftp-create-dirs --connect-timeout 15 --max-time 90 \
               --retry 2 --retry-delay 5 --retry-all-errors \
@@ -220,7 +220,7 @@ jobs:
           upload_core_file() {
             local source="$1"
             local destination="${2#/}"
-            curl --fail --show-error --silent --ssl-reqd \
+            curl --fail --show-error --silent --ftp-ssl-control \
               --user "$FTP_USERNAME:$FTP_PASSWORD" \
               --ftp-create-dirs --connect-timeout 15 --max-time 90 \
               --retry 2 --retry-delay 5 --retry-all-errors \
@@ -245,20 +245,14 @@ jobs:
             fi
 
             echo "API health check failed on attempt $attempt; uploading API again."
-            lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" -e "
-              set ftp:ssl-force true;
-              set ftp:ssl-protect-data true;
-              set ssl:verify-certificate true;
-              set net:max-retries 6;
-              set net:timeout 20;
-              set net:reconnect-interval-base 5;
-              set xfer:clobber true;
-              set cmd:fail-exit true;
-              put deploy-api/.htaccess -o /api/.htaccess;
-              put deploy-api/index.php -o /api/index.php;
-              put deploy-api/config.php -o /api/config.php;
-              bye;
-            "
+            for source in deploy-api/.htaccess deploy-api/index.php deploy-api/config.php; do
+              destination="api/$(basename "$source")"
+              curl --fail --show-error --silent --ftp-ssl-control \
+                --user "$FTP_USERNAME:$FTP_PASSWORD" \
+                --ftp-create-dirs --connect-timeout 15 --max-time 90 \
+                --retry 2 --retry-delay 5 --retry-all-errors \
+                --upload-file "$source" "ftp://$FTP_SERVER/$destination"
+            done
             sleep 10
           done
 
@@ -266,14 +260,14 @@ jobs:
           exit 1
 
       - name: Upload DaData server configuration
-        if: steps.prepare.outputs.upload_api == 'true'
+        if: steps.prepare.outputs.upload_api == 'true' && github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
           upload_ftp() {
             local source="$1"
             local destination="${2#/}"
-            curl --fail --show-error --silent --ssl-reqd \
+            curl --fail --show-error --silent --ftp-ssl-control \
               --user "$FTP_USERNAME:$FTP_PASSWORD" \
               --ftp-create-dirs --connect-timeout 15 --max-time 90 \
               --retry 2 --retry-delay 5 --retry-all-errors \
@@ -290,7 +284,7 @@ jobs:
           set -euo pipefail
           while IFS= read -r -d '' source; do
             destination="${source#deploy-public/}"
-            curl --fail --show-error --silent --ssl-reqd \
+            curl --fail --show-error --silent --ftp-ssl-control \
               --user "$FTP_USERNAME:$FTP_PASSWORD" \
               --ftp-create-dirs --connect-timeout 15 --max-time 90 \
               --retry 2 --retry-delay 5 --retry-all-errors \
