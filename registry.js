@@ -4,13 +4,34 @@ const statusLine = document.querySelector("#registryStatus");
 const tableBody = document.querySelector("#registryTableBody");
 const emptyState = document.querySelector("#registryEmpty");
 const monthFilter = document.querySelector("#registryMonthFilter");
+const dateFilter = document.querySelector("#registryDateFilter");
+const periodToggleButton = document.querySelector("#registryPeriodToggle");
+const periodPanel = document.querySelector("#registryPeriodPanel");
+const periodDateFrom = document.querySelector("#registryDateFrom");
+const periodDateTo = document.querySelector("#registryDateTo");
+const periodError = document.querySelector("#registryPeriodError");
+const periodApplyButton = document.querySelector("#registryPeriodApply");
+const periodResetButton = document.querySelector("#registryPeriodReset");
+const sourceFilter = document.querySelector("#registrySourceFilter");
 const paymentStatusFilter = document.querySelector("#registryPaymentStatusFilter");
 const paymentTypeFilter = document.querySelector("#registryPaymentTypeFilter");
 const closingDocsFilter = document.querySelector("#registryClosingDocsFilter");
 const managerFilter = document.querySelector("#registryManagerFilter");
+const summaryContainer = document.querySelector("#registrySummary");
+const summaryCount = document.querySelector("#registrySummaryCount");
+const tableHead = document.querySelector(".registry-table thead");
 
 let records = [];
 let editingCell = null;
+let sortState = { field: null, direction: "asc" };
+let appliedDateRange = { from: "", to: "" };
+const EMPTY_SOURCE_FILTER = "__empty_source__";
+const registryCollator = new Intl.Collator("ru", { numeric: true, sensitivity: "base" });
+const PAYMENT_STATUS_SORT_ORDER = {
+  Планируется: 0,
+  Предоплата: 1,
+  Да: 2,
+};
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -37,6 +58,42 @@ function formatMonth(value) {
     new Date(Number(match[1]), Number(match[2]) - 1, 1),
   );
   return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function formatShortDate(value) {
+  if (!value) return "";
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit" }).format(date);
+}
+
+function updatePeriodButton() {
+  const active = Boolean(appliedDateRange.from && appliedDateRange.to);
+  periodToggleButton.classList.toggle("is-active", active);
+  periodToggleButton.textContent = active
+    ? `${formatShortDate(appliedDateRange.from)} — ${formatShortDate(appliedDateRange.to)}`
+    : "Период";
+  periodToggleButton.title = active
+    ? `Выбран период с ${formatDate(appliedDateRange.from)} по ${formatDate(appliedDateRange.to)}`
+    : "Выбрать период по датам";
+}
+
+function setPeriodPanelOpen(open) {
+  periodPanel.classList.toggle("hidden", !open);
+  periodToggleButton.setAttribute("aria-expanded", String(open));
+  if (open) {
+    periodDateFrom.value = appliedDateRange.from;
+    periodDateTo.value = appliedDateRange.to;
+    periodError.textContent = "";
+    requestAnimationFrame(() => periodDateFrom.focus());
+  }
+}
+
+function resetAppliedDateRange() {
+  appliedDateRange = { from: "", to: "" };
+  periodDateFrom.value = "";
+  periodDateTo.value = "";
+  periodError.textContent = "";
+  updatePeriodButton();
 }
 
 function money(value) {
@@ -75,7 +132,11 @@ function renderFilterOptions() {
   const months = [...new Set(records.map((record) => String(record.date || "").slice(0, 7)).filter((value) => /^\d{4}-\d{2}$/.test(value)))]
     .sort((a, b) => b.localeCompare(a));
   const managers = [...new Set(records.map((record) => record.ownerLogin || "admin"))].sort((a, b) => a.localeCompare(b, "ru"));
+  const sourceOptions = records.some((record) => !record.registryMeta.source)
+    ? [EMPTY_SOURCE_FILTER, ...window.ContractRegistry.SOURCE_OPTIONS]
+    : window.ContractRegistry.SOURCE_OPTIONS;
   setFilterOptions(monthFilter, months, "Все месяцы", formatMonth);
+  setFilterOptions(sourceFilter, sourceOptions, "Все источники", (value) => (value === EMPTY_SOURCE_FILTER ? "Не указано" : value));
   setFilterOptions(paymentStatusFilter, window.ContractRegistry.PAYMENT_STATUS_OPTIONS, "Все варианты");
   setFilterOptions(paymentTypeFilter, window.ContractRegistry.PAYMENT_TYPE_OPTIONS, "Все варианты");
   setFilterOptions(closingDocsFilter, window.ContractRegistry.CLOSING_DOCS_OPTIONS, "Все варианты");
@@ -90,14 +151,19 @@ function bonusAmount(record) {
   return Number.isFinite(percent) ? (record.amount * percent) / 100 : 0;
 }
 
-function remainder(record) {
-  return Math.max(0, record.amount - (Number(record.registryMeta.prepayment) || 0));
+function remainder(record, prepayment = record.registryMeta.prepayment) {
+  const difference = (Number(record.amount) || 0) - (Number(prepayment) || 0);
+  return Math.max(0, Math.round((difference + Number.EPSILON) * 100) / 100);
+}
+
+function hasPaymentRemainder(record, prepayment = record.registryMeta.prepayment) {
+  return remainder(record, prepayment) > 0;
 }
 
 function dealStatus(record) {
   const { paymentStatus, closingDocs } = record.registryMeta;
   const closingComplete = closingDocs === "Отправлены" || closingDocs === "Не нужно";
-  if (paymentStatus === "Да" && closingComplete) return "Завершена";
+  if (paymentStatus === "Да" && !hasPaymentRemainder(record) && closingComplete) return "Завершена";
   if (paymentStatus === "Да" || paymentStatus === "Предоплата") return "В работе";
   return "Планируется";
 }
@@ -114,24 +180,143 @@ function dealTone(status) {
   return "deal-tone-planned";
 }
 
+function closingTone(status) {
+  if (status === "Отправлены" || status === "Не нужно") return "closing-tone-complete";
+  return "closing-tone-pending";
+}
+
 function statusLabel(status) {
   return status === "exported" ? "выгружен" : "черновик";
 }
 
+function sortValue(record, field) {
+  const meta = record.registryMeta;
+  const values = {
+    number: record.number,
+    date: record.date,
+    counterparty: record.counterparty,
+    amount: Number(record.amount) || 0,
+    source: meta.source,
+    paymentStatus: PAYMENT_STATUS_SORT_ORDER[meta.paymentStatus] ?? -1,
+    prepayment: Number(meta.prepayment) || 0,
+    remainder: remainder(record),
+    paymentType: meta.paymentType,
+    closingDocs: meta.closingDocs,
+    dealStatus: dealStatus(record),
+    bonusType: meta.bonusType,
+    bonusAmount: bonusAmount(record),
+    recordStatus: statusLabel(record.status),
+    manager: record.ownerLogin || "admin",
+  };
+  return values[field] ?? "";
+}
+
+function sortRecords(recordsToSort) {
+  if (!sortState.field) return recordsToSort;
+  const direction = sortState.direction === "desc" ? -1 : 1;
+  return recordsToSort
+    .map((record, index) => ({ record, index }))
+    .sort((left, right) => {
+      const leftValue = sortValue(left.record, sortState.field);
+      const rightValue = sortValue(right.record, sortState.field);
+      let comparison;
+      if (typeof leftValue === "number" && typeof rightValue === "number") {
+        comparison = leftValue - rightValue;
+      } else {
+        comparison = registryCollator.compare(String(leftValue), String(rightValue));
+      }
+      return comparison === 0 ? left.index - right.index : comparison * direction;
+    })
+    .map(({ record }) => record);
+}
+
+function renderSortHeaders() {
+  tableHead?.querySelectorAll("[data-sort-field]").forEach((button) => {
+    const active = button.dataset.sortField === sortState.field;
+    const directionLabel = sortState.direction === "asc" ? "по возрастанию" : "по убыванию";
+    button.classList.toggle("is-active", active);
+    button.querySelector("span").textContent = active ? (sortState.direction === "asc" ? "↑" : "↓") : "↕";
+    button.closest("th").setAttribute("aria-sort", active ? (sortState.direction === "asc" ? "ascending" : "descending") : "none");
+    button.title = active ? `Сейчас ${directionLabel}. Нажмите, чтобы изменить порядок` : "Нажмите, чтобы отсортировать";
+  });
+}
+
 function filteredRecords() {
   const query = searchInput.value.trim().toLowerCase();
-  return records.filter((record) => {
+  const filtered = records.filter((record) => {
     const meta = record.registryMeta;
     const ownerLogin = record.ownerLogin || "admin";
+    const recordDate = String(record.date || "");
+    const inAppliedDateRange =
+      !appliedDateRange.from ||
+      (recordDate && recordDate >= appliedDateRange.from && recordDate <= appliedDateRange.to);
     return (
       (!query || record.number.toLowerCase().includes(query) || record.counterparty.toLowerCase().includes(query)) &&
       (!monthFilter.value || String(record.date || "").startsWith(monthFilter.value)) &&
+      inAppliedDateRange &&
+      (!sourceFilter.value || (sourceFilter.value === EMPTY_SOURCE_FILTER ? !meta.source : meta.source === sourceFilter.value)) &&
       (!paymentStatusFilter.value || meta.paymentStatus === paymentStatusFilter.value) &&
       (!paymentTypeFilter.value || meta.paymentType === paymentTypeFilter.value) &&
       (!closingDocsFilter.value || meta.closingDocs === closingDocsFilter.value) &&
       (!managerFilter.value || ownerLogin === managerFilter.value)
     );
   });
+  return sortRecords(filtered);
+}
+
+function sumRecords(recordsToSum, predicate, selector) {
+  return recordsToSum.reduce((total, record) => (predicate(record) ? total + selector(record) : total), 0);
+}
+
+function renderSummary(visibleRecords) {
+  if (!summaryContainer || !summaryCount) return;
+  const planned = (record) => dealStatus(record) === "Планируется";
+  const active = (record) => dealStatus(record) === "В работе";
+  const complete = (record) => dealStatus(record) === "Завершена";
+  const activeOrComplete = (record) => active(record) || complete(record);
+  const anyRecord = () => true;
+  const amount = (record) => Number(record.amount) || 0;
+  const bonus = (record) => bonusAmount(record);
+  const columns = [
+    [
+      ["Сумма Завершенных Договоров", sumRecords(visibleRecords, complete, amount), "registry-summary-card-complete"],
+      ["Сумма Бонусов по Завершенным", sumRecords(visibleRecords, complete, bonus), "registry-summary-card-complete"],
+      ["Сумма Остатка по Договорам в работе", sumRecords(visibleRecords, active, remainder), "registry-summary-card-remainder"],
+    ],
+    [
+      ["Сумма Договоров по завершенным и в работе", sumRecords(visibleRecords, activeOrComplete, amount), "registry-summary-card-active-complete"],
+      ["Сумма бонусов по завершенным и в работе", sumRecords(visibleRecords, activeOrComplete, bonus), "registry-summary-card-bonus"],
+    ],
+    [
+      ["Сумма Договоров в работе", sumRecords(visibleRecords, active, amount), ""],
+      ["Сумма бонусов в Работе", sumRecords(visibleRecords, active, bonus), "registry-summary-card-bonus"],
+    ],
+    [
+      ["Сумма планируемых Договоров", sumRecords(visibleRecords, planned, amount), ""],
+      ["Сумма Бонусов по планируемым", sumRecords(visibleRecords, planned, bonus), "registry-summary-card-bonus"],
+    ],
+    [
+      ["Сумма Договоров", sumRecords(visibleRecords, anyRecord, amount), "registry-summary-card-total"],
+      ["Сумма бонусов по всем", sumRecords(visibleRecords, anyRecord, bonus), "registry-summary-card-bonus"],
+    ],
+  ];
+
+  summaryCount.textContent = `В выборке: ${visibleRecords.length}`;
+  const pairedCards = columns
+    .map((cards) => {
+      const content = cards
+        .map(
+          ([label, value, tone]) => `
+            <article class="registry-summary-card ${tone}">
+              <span class="registry-summary-label">${escapeHtml(label)}</span>
+              <strong class="registry-summary-value">${escapeHtml(money(value))}</strong>
+            </article>`,
+        )
+        .join("");
+      return `<div class="registry-summary-column">${content}</div>`;
+    })
+    .join("");
+  summaryContainer.innerHTML = pairedCards;
 }
 
 function staticCell(value, extraClass = "", title = value) {
@@ -171,7 +356,12 @@ function editorMarkup(record, field) {
     bonusType: [window.ContractRegistry.BONUS_TYPE_OPTIONS, null],
   };
   const [options, emptyLabel] = optionsByField[field];
-  const toneClass = field === "paymentStatus" ? paymentTone(meta.paymentStatus) : "";
+  const toneClass =
+    field === "paymentStatus"
+      ? paymentTone(meta.paymentStatus)
+      : field === "closingDocs"
+        ? closingTone(meta.closingDocs)
+        : "";
   return `<select class="registry-control registry-cell-editor ${toneClass}" ${common}>
     ${selectOptions(options, meta[field], emptyLabel)}
   </select>`;
@@ -209,11 +399,11 @@ function render() {
           ${editableCell(record, "prepayment", prepaymentEnabled)}
           ${staticCell(money(remainder(record)), "registry-money-value")}
           ${editableCell(record, "paymentType")}
-          ${editableCell(record, "closingDocs")}
+          ${editableCell(record, "closingDocs", true, closingTone(meta.closingDocs))}
           ${staticCell(currentDealStatus, dealTone(currentDealStatus))}
           ${editableCell(record, "bonusType")}
           ${editableCell(record, "bonusAmount", profitBonus)}
-          ${markupCell(`<span class="status-badge ${record.status}">${escapeHtml(statusLabel(record.status))}</span>`)}
+          ${isAdmin ? markupCell(`<span class="status-badge ${record.status}">${escapeHtml(statusLabel(record.status))}</span>`) : ""}
           ${isAdmin ? staticCell(record.ownerLogin || "admin") : ""}
           ${
             isAdmin
@@ -224,6 +414,8 @@ function render() {
     })
     .join("");
   emptyState.classList.toggle("hidden", visibleRecords.length > 0);
+  renderSortHeaders();
+  renderSummary(visibleRecords);
 }
 
 function canEditField(record, field) {
@@ -257,9 +449,25 @@ async function commitEditor(control) {
   const field = control.dataset.registryField;
   const previousMeta = { ...record.registryMeta };
   const value = control.type === "number" ? Math.max(0, Number(control.value) || 0) : control.value;
+  if (field === "paymentStatus" && value === "Да" && hasPaymentRemainder(record)) {
+    const message = `Нельзя поставить «Оплачен — Да»: по договору остаётся ${money(remainder(record))}. Сначала укажите полную оплату в поле «Предоплата».`;
+    control.setCustomValidity(message);
+    control.reportValidity();
+    setStatus(message);
+    control.focus();
+    return;
+  }
   if (field === "prepayment" && value > record.amount) {
     control.setCustomValidity("Предоплата не может превышать полную сумму договора.");
     control.reportValidity();
+    control.focus();
+    return;
+  }
+  if (field === "prepayment" && record.registryMeta.paymentStatus === "Да" && hasPaymentRemainder(record, value)) {
+    const message = "При статусе «Оплачен — Да» сумма оплаты должна быть равна полной сумме договора.";
+    control.setCustomValidity(message);
+    control.reportValidity();
+    setStatus(message);
     control.focus();
     return;
   }
@@ -327,8 +535,59 @@ async function deleteRecord(number) {
 
 reloadButton.addEventListener("click", loadRecords);
 searchInput.addEventListener("input", render);
-[monthFilter, paymentStatusFilter, paymentTypeFilter, closingDocsFilter, managerFilter].forEach((filter) => {
+[sourceFilter, paymentStatusFilter, paymentTypeFilter, closingDocsFilter, managerFilter].forEach((filter) => {
   filter.addEventListener("change", render);
+});
+monthFilter.addEventListener("change", () => {
+  if (monthFilter.value) resetAppliedDateRange();
+  setPeriodPanelOpen(false);
+  render();
+});
+periodToggleButton.addEventListener("click", () => {
+  setPeriodPanelOpen(periodPanel.classList.contains("hidden"));
+});
+periodApplyButton.addEventListener("click", () => {
+  const from = periodDateFrom.value;
+  const to = periodDateTo.value;
+  if (!from || !to) {
+    periodError.textContent = "Укажите начало и конец периода.";
+    return;
+  }
+  if (from > to) {
+    periodError.textContent = "Дата начала не может быть позже даты окончания.";
+    return;
+  }
+  appliedDateRange = { from, to };
+  monthFilter.value = "";
+  updatePeriodButton();
+  setPeriodPanelOpen(false);
+  render();
+  setStatus(`Показаны договоры с ${formatDate(from)} по ${formatDate(to)}.`);
+});
+periodResetButton.addEventListener("click", () => {
+  resetAppliedDateRange();
+  setPeriodPanelOpen(false);
+  render();
+});
+document.addEventListener("click", (event) => {
+  if (!periodPanel.classList.contains("hidden") && !dateFilter.contains(event.target)) setPeriodPanelOpen(false);
+});
+periodPanel.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setPeriodPanelOpen(false);
+    periodToggleButton.focus();
+  }
+});
+tableHead.addEventListener("click", (event) => {
+  const sortButton = event.target.closest("[data-sort-field]");
+  if (!sortButton) return;
+  const field = sortButton.dataset.sortField;
+  sortState = {
+    field,
+    direction: sortState.field === field && sortState.direction === "asc" ? "desc" : "asc",
+  };
+  render();
 });
 tableBody.addEventListener("click", (event) => {
   const deleteButton = event.target.closest("[data-delete-number]");
@@ -365,14 +624,31 @@ tableBody.addEventListener("keydown", (event) => {
   }
 });
 tableBody.addEventListener("change", (event) => {
-  const editor = event.target.closest('select[data-registry-field="paymentStatus"]');
+  const editor = event.target.closest("select[data-registry-field]");
   if (!editor) return;
-  editor.classList.remove("payment-tone-paid", "payment-tone-prepaid", "payment-tone-planned");
-  editor.classList.add(paymentTone(editor.value));
+  if (editor.dataset.registryField === "paymentStatus") {
+    const row = editor.closest("tr[data-number]");
+    const record = records.find((item) => item.number === row?.dataset.number);
+    if (record && editor.value === "Да" && hasPaymentRemainder(record)) {
+      const message = `Нельзя поставить «Оплачен — Да»: по договору остаётся ${money(remainder(record))}. Сначала укажите полную оплату в поле «Предоплата».`;
+      editor.setCustomValidity(message);
+      editor.reportValidity();
+      setStatus(message);
+      editor.value = record.registryMeta.paymentStatus;
+      editor.setCustomValidity("");
+    }
+    editor.classList.remove("payment-tone-paid", "payment-tone-prepaid", "payment-tone-planned");
+    editor.classList.add(paymentTone(editor.value));
+  }
+  if (editor.dataset.registryField === "closingDocs") {
+    editor.classList.remove("closing-tone-complete", "closing-tone-pending");
+    editor.classList.add(closingTone(editor.value));
+  }
 });
 
 async function initRegistry() {
   await window.ManagerAuth.ready;
+  updatePeriodButton();
   await loadRecords();
 }
 

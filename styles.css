@@ -743,9 +743,74 @@ fieldset {
 
 .registry-filters {
   display: grid;
-  grid-template-columns: repeat(5, minmax(145px, 1fr));
+  grid-template-columns: minmax(240px, 1.4fr) repeat(5, minmax(145px, 1fr));
   gap: 10px;
   margin-top: 12px;
+}
+
+.registry-date-filter {
+  position: relative;
+  display: grid;
+  gap: 7px;
+}
+
+.registry-date-filter > label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.registry-month-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) auto;
+  gap: 7px;
+}
+
+.registry-period-toggle {
+  min-width: 86px;
+  height: 40px;
+  padding-inline: 10px;
+  white-space: nowrap;
+}
+
+.registry-period-toggle.is-active {
+  color: var(--accent-strong);
+  border-color: #8fc7bb;
+  background: #eaf6f3;
+}
+
+.registry-period-panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  width: min(420px, calc(100vw - 56px));
+  grid-template-columns: repeat(2, minmax(145px, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.registry-period-panel.hidden {
+  display: none;
+}
+
+.registry-period-error {
+  min-height: 18px;
+  grid-column: 1 / -1;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.registry-period-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .registry-admin {
@@ -785,6 +850,43 @@ fieldset {
   color: var(--muted);
   background: #f8faf9;
   font-size: 13px;
+}
+
+.registry-sort-button {
+  display: flex;
+  width: 100%;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  padding: 3px 2px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.registry-sort-button span {
+  color: #8b9794;
+  font-size: 15px;
+}
+
+.registry-sort-button:hover,
+.registry-sort-button:focus-visible,
+.registry-sort-button.is-active {
+  color: var(--accent-strong);
+}
+
+.registry-sort-button:focus-visible {
+  outline: 2px solid rgba(15, 122, 104, 0.3);
+  outline-offset: 2px;
+}
+
+.registry-sort-button.is-active span {
+  color: var(--accent);
 }
 
 .registry-table tbody tr {
@@ -908,6 +1010,18 @@ fieldset {
   background: #fde9e7;
 }
 
+.closing-tone-complete {
+  color: #12613f;
+  border-color: #9fd5bb;
+  background: #e4f6ed;
+}
+
+.closing-tone-pending {
+  color: #9a342d;
+  border-color: #e3aaa5;
+  background: #fde9e7;
+}
+
 .deal-tone-complete {
   color: #12613f;
   border-color: #b6ddc8;
@@ -959,6 +1073,103 @@ fieldset {
   padding: 28px 12px;
   color: var(--muted);
   text-align: center;
+}
+
+.registry-summary {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfcfc;
+}
+
+.registry-summary-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.registry-summary-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.registry-summary-header span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.registry-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.registry-summary-column {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.registry-summary-card {
+  display: grid;
+  gap: 6px;
+  min-height: 82px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+}
+
+.registry-summary-card-total {
+  border-color: #a9c9c2;
+  background: #f2f8f6;
+}
+
+.registry-summary-card-complete {
+  color: #12613f;
+  border-color: #8fcfab;
+  background: #e4f6ed;
+}
+
+.registry-summary-card-complete .registry-summary-label {
+  color: #2f7653;
+}
+
+.registry-summary-card-bonus {
+  border-color: #e8d8a9;
+  background: #fffaf0;
+}
+
+.registry-summary-card-active-complete {
+  border-color: #b9cbd8;
+  background: #f2f7fa;
+}
+
+.registry-summary-card-remainder {
+  color: #9a342d;
+  border-color: #e3aaa5;
+  background: #fde9e7;
+}
+
+.registry-summary-card-remainder .registry-summary-label {
+  color: #a94b44;
+}
+
+.registry-summary-label {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.registry-summary-value {
+  align-self: end;
+  font-size: 17px;
+  line-height: 1.2;
 }
 
 .login-page {
@@ -1031,6 +1242,10 @@ fieldset {
 @media (max-width: 1200px) {
   .registry-filters {
     grid-template-columns: repeat(3, minmax(145px, 1fr));
+  }
+
+  .registry-summary-grid {
+    grid-template-columns: repeat(3, minmax(170px, 1fr));
   }
 }
 
@@ -1133,11 +1348,28 @@ fieldset {
   .registry-toolbar,
   .registry-filters,
   .registry-admin-row,
+  .registry-summary-grid,
   .tech-card-header,
   .user-create-grid,
   .user-row,
   .user-password-action {
     grid-template-columns: 1fr;
+  }
+
+  .registry-summary-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .registry-period-panel {
+    position: static;
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .registry-period-error,
+  .registry-period-actions {
+    grid-column: 1;
   }
 
   .tech-remove-button {

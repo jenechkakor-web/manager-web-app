@@ -215,6 +215,18 @@ function normalize_registry_meta(array $record, array $data, $amount)
     ];
 }
 
+function assert_paid_status_has_no_remainder(array $registryMeta, $amount)
+{
+    $prepayment = isset($registryMeta['prepayment']) ? (float) $registryMeta['prepayment'] : 0;
+    $remainingAmount = round_money(max(0, (float) $amount - $prepayment));
+    if ((isset($registryMeta['paymentStatus']) ? $registryMeta['paymentStatus'] : '') === 'Да' && $remainingAmount > 0) {
+        respond([
+            'error' => 'Нельзя поставить «Оплачен — Да»: по договору остаётся '
+                . number_format($remainingAmount, 2, '.', '') . ' ₽.',
+        ], 409);
+    }
+}
+
 function normalize_record(array $record)
 {
     $data = isset($record['data']) && is_array($record['data']) ? $record['data'] : [];
@@ -586,6 +598,7 @@ try {
                 is_array($data) ? $data : [],
                 (float) $row['amount']
             );
+            assert_paid_status_has_no_remainder($registryMeta, (float) $row['amount']);
             $updatedAt = gmdate('c');
             $statement = $pdo->prepare('UPDATE manager_contracts
                 SET registry_meta_json = :registry_meta_json, updated_at = :updated_at WHERE record_number = :number');
@@ -635,6 +648,7 @@ try {
                 );
             }
         }
+        assert_paid_status_has_no_remainder($record['registryMeta'], $record['amount']);
         save_record($pdo, $record, $user);
         respond(['saved' => true]);
     }

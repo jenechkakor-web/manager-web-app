@@ -110,6 +110,16 @@ function normalizeRegistryMeta(entry, data, amount) {
   };
 }
 
+function assertPaidStatusHasNoRemainder(registryMeta, amount) {
+  const remainingAmount = roundMoney(Math.max(0, (Number(amount) || 0) - (Number(registryMeta?.prepayment) || 0)));
+  if (registryMeta?.paymentStatus === "Да" && remainingAmount > 0) {
+    throw Object.assign(
+      new Error(`Нельзя поставить «Оплачен — Да»: по договору остаётся ${remainingAmount.toFixed(2)} ₽.`),
+      { status: 409 },
+    );
+  }
+}
+
 function normalizeRecord(entry, ownerId = null) {
   const data = entry?.data && typeof entry.data === "object" ? entry.data : {};
   const number = String(entry?.number || entry?.contractNumber || data.contractNumber || "").trim();
@@ -360,11 +370,13 @@ async function handleApi(req, res, pathname) {
         const fields = body.fields && typeof body.fields === "object" ? body.fields : {};
         const mergedFields = { ...existing.registryMeta, ...fields };
         if (Object.prototype.hasOwnProperty.call(fields, "prepayment")) mergedFields.prepaymentOverridden = true;
-        existing.registryMeta = normalizeRegistryMeta(
+        const nextRegistryMeta = normalizeRegistryMeta(
           { registryMeta: mergedFields },
           existing.data,
           existing.amount,
         );
+        assertPaidStatusHasNoRemainder(nextRegistryMeta, existing.amount);
+        existing.registryMeta = nextRegistryMeta;
         existing.updatedAt = new Date().toISOString();
         await writeJson(registryPath, records);
         sendJson(res, 200, { record: existing });
@@ -393,6 +405,7 @@ async function handleApi(req, res, pathname) {
             : templatePrepayment(incoming.data, incoming.amount),
         };
       }
+      assertPaidStatusHasNoRemainder(incoming.registryMeta, incoming.amount);
       records = [incoming, ...records.filter((record) => record.number !== incoming.number)];
       await writeJson(registryPath, records);
       sendJson(res, 200, { saved: true });

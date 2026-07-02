@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Реестр договоров</title>
-    <link rel="stylesheet" href="styles.css?v=20260701-registry-2" />
+    <link rel="stylesheet" href="styles.css?v=20260702-registry-6" />
   </head>
   <body>
     <main class="app-shell">
@@ -40,9 +40,31 @@
                 </label>
               </div>
               <div class="registry-filters" aria-label="Фильтры реестра">
+                <div class="registry-date-filter" id="registryDateFilter">
+                  <label for="registryMonthFilter">Месяц</label>
+                  <div class="registry-month-row">
+                    <select id="registryMonthFilter"><option value="">Все месяцы</option></select>
+                    <button class="button ghost registry-period-toggle" id="registryPeriodToggle" type="button" aria-expanded="false" aria-controls="registryPeriodPanel">Период</button>
+                  </div>
+                  <div class="registry-period-panel hidden" id="registryPeriodPanel">
+                    <label>
+                      <span>Дата с</span>
+                      <input id="registryDateFrom" type="date" />
+                    </label>
+                    <label>
+                      <span>Дата по</span>
+                      <input id="registryDateTo" type="date" />
+                    </label>
+                    <p class="registry-period-error" id="registryPeriodError" role="alert"></p>
+                    <div class="registry-period-actions">
+                      <button class="button primary" id="registryPeriodApply" type="button">Применить</button>
+                      <button class="button ghost" id="registryPeriodReset" type="button">Сбросить</button>
+                    </div>
+                  </div>
+                </div>
                 <label>
-                  <span>Месяц</span>
-                  <select id="registryMonthFilter"><option value="">Все месяцы</option></select>
+                  <span>Источник</span>
+                  <select id="registrySourceFilter"><option value="">Все источники</option></select>
                 </label>
                 <label>
                   <span>Оплачен</span>
@@ -56,7 +78,7 @@
                   <span>Закрывашки</span>
                   <select id="registryClosingDocsFilter"><option value="">Все варианты</option></select>
                 </label>
-                <label>
+                <label class="hidden" data-admin-only>
                   <span>Менеджер</span>
                   <select id="registryManagerFilter"><option value="">Все менеджеры</option></select>
                 </label>
@@ -66,28 +88,35 @@
                 <table class="registry-table">
                   <thead>
                     <tr>
-                      <th>Номер</th>
-                      <th>Дата</th>
-                      <th>Контрагент</th>
-                      <th>Сумма</th>
-                      <th>Источник</th>
-                      <th>Оплачен</th>
-                      <th>Предоплата</th>
-                      <th>Остаток</th>
-                      <th>Вид оплаты</th>
-                      <th>Закрывашки</th>
-                      <th>Статус сделки</th>
-                      <th>Тип бонуса</th>
-                      <th>Сумма бонуса</th>
-                      <th>Статус</th>
-                      <th class="hidden" data-admin-only>Менеджер</th>
-                      <th class="hidden" data-admin-only>Удаление</th>
+                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="number" type="button">Номер<span aria-hidden="true">↕</span></button></th>
+                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="date" type="button">Дата<span aria-hidden="true">↕</span></button></th>
+                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="counterparty" type="button">Контрагент<span aria-hidden="true">↕</span></button></th>
+                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="amount" type="button">Сумма<span aria-hidden="true">↕</span></button></th>
+                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="source" type="button">Источник<span aria-hidden="true">↕</span></button></th>
+                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="paymentStatus" type="button">Оплачен<span aria-hidden="true">↕</span></button></th>
+                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="prepayment" type="button">Предоплата<span aria-hidden="true">↕</span></button></th>
+                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="remainder" type="button">Остаток<span aria-hidden="true">↕</span></button></th>
+                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="paymentType" type="button">Вид оплаты<span aria-hidden="true">↕</span></button></th>
+                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="closingDocs" type="button">Закрывашки<span aria-hidden="true">↕</span></button></th>
+                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="dealStatus" type="button">Статус сделки<span aria-hidden="true">↕</span></button></th>
+                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="bonusType" type="button">Тип бонуса<span aria-hidden="true">↕</span></button></th>
+                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="bonusAmount" type="button">Сумма бонуса<span aria-hidden="true">↕</span></button></th>
+                      <th class="hidden" data-admin-only scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="recordStatus" type="button">Статус<span aria-hidden="true">↕</span></button></th>
+                      <th class="hidden" data-admin-only scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="manager" type="button">Менеджер<span aria-hidden="true">↕</span></button></th>
+                      <th class="hidden" data-admin-only scope="col">Удаление</th>
                     </tr>
                   </thead>
                   <tbody id="registryTableBody"></tbody>
                 </table>
                 <div class="registry-empty hidden" id="registryEmpty">В реестре пока нет договоров.</div>
               </div>
+              <section class="registry-summary" aria-label="Свод по суммам">
+                <div class="registry-summary-header">
+                  <h2>Свод по выбранным договорам</h2>
+                  <span id="registrySummaryCount">В выборке: 0</span>
+                </div>
+                <div class="registry-summary-grid" id="registrySummary"></div>
+              </section>
             </section>
           </section>
         </section>
@@ -95,6 +124,6 @@
     </main>
     <script src="auth.js?v=20260618-auth-1"></script>
     <script src="registry-storage-sync.js?v=20260630-registry-1"></script>
-    <script src="registry.js?v=20260701-registry-2"></script>
+    <script src="registry.js?v=20260702-registry-7"></script>
   </body>
 </html>
