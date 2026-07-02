@@ -33,6 +33,7 @@
       ? templatePrepayment(data, amount)
       : roundMoney(Math.max(0, Math.min(amount, Number(rawPrepayment) || 0)));
     return {
+      title: String(source.title || "").trim(),
       source: choice(source.source, SOURCE_OPTIONS, ""),
       paymentStatus: choice(source.paymentStatus, PAYMENT_STATUS_OPTIONS, "Планируется"),
       prepayment,
@@ -194,6 +195,10 @@
       amount: Number(data?.totals?.grandTotal ?? 0),
       status,
       updatedAt: new Date().toISOString(),
+      registryMeta: {
+        title: String(data?.registryDealTitle || "").trim(),
+        source: choice(data?.registryDealSource, SOURCE_OPTIONS, ""),
+      },
       data,
     });
   }

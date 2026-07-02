@@ -51,14 +51,213 @@ button {
   border: 1px solid var(--line);
   background: var(--surface);
   box-shadow: var(--shadow);
+  transition: grid-template-columns 0.22s ease;
+}
+
+/* Registry working sheet: search, filters, table and summary share one width. */
+.registry-panel {
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.registry-sheet-viewport {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.registry-sheet {
+  min-width: 1px;
+  background: #fff;
+}
+
+.registry-sheet .registry-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  align-items: end;
+  padding: 6px 7px;
+  border: 1px solid #cfd8d6;
+  border-bottom: 0;
+  background: #f7f9f8;
+}
+
+.registry-sheet .registry-toolbar label,
+.registry-sheet .registry-filters > label,
+.registry-sheet .registry-date-filter {
+  min-width: 0;
+  gap: 3px;
+}
+
+.registry-sheet .registry-toolbar label > span,
+.registry-sheet .registry-filters > label > span,
+.registry-sheet .registry-date-filter > label {
+  overflow: hidden;
+  color: #566562;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.registry-sheet .registry-toolbar input,
+.registry-sheet .registry-filters select,
+.registry-sheet .registry-filters input {
+  height: 29px;
+  min-width: 0;
+  padding: 0 7px;
+  border-radius: 2px;
+  font-size: 12px;
+}
+
+.registry-sheet .registry-toolbar input:focus,
+.registry-sheet .registry-filters select:focus,
+.registry-sheet .registry-filters input:focus {
+  box-shadow: inset 0 0 0 1px rgba(15, 122, 104, 0.25);
+}
+
+.registry-sheet .registry-filters {
+  display: flex;
+  width: 100%;
+  margin-top: 0;
+  gap: 0;
+  align-items: stretch;
+  border: 1px solid #cfd8d6;
+  border-bottom: 0;
+  background: #f7f9f8;
+}
+
+.registry-sheet .registry-filters > label,
+.registry-sheet .registry-date-filter {
+  flex: 1 1 0;
+  padding: 5px 6px 6px;
+  border-right: 1px solid #dce3e1;
+}
+
+.registry-sheet .registry-date-filter {
+  flex-grow: 1.35;
+}
+
+.registry-sheet .registry-filters > :last-child {
+  border-right: 0;
+}
+
+.registry-sheet .registry-month-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px;
+}
+
+.registry-sheet .registry-period-toggle {
+  min-width: 68px;
+  height: 29px;
+  padding-inline: 7px;
+  border-radius: 2px;
+  font-size: 12px;
+}
+
+.registry-sheet > .status-line {
+  min-height: 25px;
+  padding: 4px 7px;
+  border: 1px solid #cfd8d6;
+  border-bottom: 0;
+  background: #fff;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.registry-sheet .registry-table-wrap {
+  width: 100%;
+  overflow: visible;
+}
+
+.registry-sheet .registry-empty {
+  width: 100%;
+  padding: 16px 8px;
+  border-radius: 0;
+}
+
+.registry-sheet .registry-summary {
+  display: grid;
+  width: 100%;
+  gap: 0;
+  margin-top: 8px;
+  padding: 0;
+  border: 1px solid #cfd8d6;
+  border-radius: 0;
+  background: #fff;
+}
+
+.registry-sheet .registry-summary-header {
+  min-height: 31px;
+  padding: 5px 7px;
+  border-bottom: 1px solid #dce3e1;
+  background: #edf1f0;
+}
+
+.registry-sheet .registry-summary-header h2 {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.registry-sheet .registry-summary-header span {
+  font-size: 11px;
+}
+
+.registry-sheet .registry-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+}
+
+.registry-sheet .registry-summary-column {
+  display: grid;
+  align-content: start;
+  gap: 0;
+  min-width: 0;
+  border-right: 1px solid #dce3e1;
+}
+
+.registry-sheet .registry-summary-column:last-child {
+  border-right: 0;
+}
+
+.registry-sheet .registry-summary-card {
+  min-height: 54px;
+  gap: 3px;
+  padding: 6px 8px;
+  border: 0;
+  border-bottom: 1px solid #dce3e1;
+  border-radius: 0;
+}
+
+.registry-sheet .registry-summary-column .registry-summary-card:last-child {
+  border-bottom: 0;
+}
+
+.registry-sheet .registry-summary-label {
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.registry-sheet .registry-summary-value {
+  font-size: 14px;
+  line-height: 1.15;
 }
 
 .sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
   padding: 20px 14px;
   border-right: 1px solid var(--line);
   background: #fbfcfc;
+  overflow: hidden;
 }
 
 .brand {
@@ -95,8 +294,10 @@ button {
 }
 
 .nav-item {
-  display: block;
+  display: flex;
   width: 100%;
+  align-items: center;
+  gap: 9px;
   padding: 11px 12px;
   border: 0;
   border-radius: 7px;
@@ -191,6 +392,52 @@ h2 {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.registry-top-controls {
+  display: grid;
+  min-width: min(100%, 460px);
+  justify-items: end;
+  gap: 10px;
+}
+
+.registry-scale-control {
+  display: grid;
+  width: min(100%, 390px);
+  grid-template-columns: auto minmax(150px, 1fr) 48px;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.registry-scale-control input {
+  appearance: auto;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.registry-scale-control input:focus,
+.registry-scale-control input:focus-visible {
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+}
+
+.registry-scale-control output {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .row-actions {
@@ -773,6 +1020,24 @@ fieldset {
   white-space: nowrap;
 }
 
+.nav-icon {
+  display: none;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  place-items: center;
+}
+
+.nav-icon svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .registry-period-toggle.is-active {
   color: var(--accent-strong);
   border-color: #8fc7bb;
@@ -827,39 +1092,58 @@ fieldset {
 }
 
 .registry-table-wrap {
+  width: 100%;
   overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 0;
+  border-radius: 0;
 }
 
 .registry-table {
-  width: 100%;
-  min-width: 2280px;
+  width: 2680px;
+  min-width: 0;
+  table-layout: fixed;
   border-collapse: collapse;
+  border: 1px solid #cfd8d6;
+  background: #fff;
 }
 
 .registry-table th,
 .registry-table td {
-  padding: 8px;
-  border-bottom: 1px solid var(--line);
+  padding: 0;
+  border-right: 1px solid #dce3e1;
+  border-bottom: 1px solid #dce3e1;
   text-align: left;
   vertical-align: middle;
 }
 
 .registry-table th {
-  color: var(--muted);
-  background: #f8faf9;
-  font-size: 13px;
+  position: relative;
+  color: #42524f;
+  background: #edf1f0;
+  font-size: 12px;
+}
+
+.registry-table th[data-column="delete"] {
+  height: 31px;
+  padding: 4px 17px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.registry-delete-heading {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .registry-sort-button {
   display: flex;
   width: 100%;
-  min-height: 30px;
+  min-height: 31px;
   align-items: center;
   justify-content: space-between;
   gap: 7px;
-  padding: 3px 2px;
+  padding: 4px 17px 4px 17px;
   border: 0;
   color: inherit;
   background: transparent;
@@ -867,6 +1151,44 @@ fieldset {
   font-weight: 700;
   text-align: left;
   cursor: pointer;
+}
+
+.registry-column-drag-handle {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  z-index: 2;
+  width: 12px;
+  overflow: hidden;
+  color: #899592;
+  font-size: 11px;
+  line-height: 18px;
+  letter-spacing: -3px;
+  opacity: 0.35;
+  transform: translateY(-50%);
+  cursor: grab;
+  user-select: none;
+}
+
+.registry-column-drag-handle:hover {
+  color: var(--accent-strong);
+  opacity: 1;
+}
+
+.registry-column-drag-handle:active {
+  cursor: grabbing;
+}
+
+.registry-table th.is-dragging {
+  opacity: 0.48;
+}
+
+.registry-table th.drop-before {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.registry-table th.drop-after {
+  box-shadow: inset -3px 0 0 var(--accent);
 }
 
 .registry-sort-button span {
@@ -889,34 +1211,138 @@ fieldset {
   color: var(--accent);
 }
 
+.registry-column-resizer {
+  position: absolute;
+  top: 0;
+  right: -6px;
+  z-index: 3;
+  width: 13px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.registry-column-resizer::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 6px;
+  width: 1px;
+  background: transparent;
+}
+
+.registry-table th:hover .registry-column-resizer::after,
+.registry-column-resizer.is-resizing::after {
+  background: var(--accent);
+}
+
+.registry-column-measurement {
+  position: fixed;
+  top: -10000px;
+  left: -10000px;
+  width: auto;
+  white-space: pre;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.registry-table.is-resizing,
+.registry-table.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.registry-column-hidden {
+  display: none;
+}
+
+.registry-sticky-scrollbar {
+  position: fixed;
+  bottom: 0;
+  z-index: 18;
+  height: 18px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid #cbd7d4;
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  background: #f1f5f4;
+  box-shadow: 0 -5px 14px rgba(20, 35, 35, 0.12);
+}
+
+.registry-sticky-scrollbar > div {
+  height: 1px;
+}
+
+.column-settings-modal {
+  width: min(720px, 100%);
+}
+
+.column-settings-help {
+  margin: 0;
+  color: var(--muted);
+}
+
+.column-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.column-setting-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f8faf9;
+}
+
+.column-setting-item input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.column-setting-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .registry-table tbody tr {
   cursor: default;
 }
 
 .registry-table .registry-control {
   width: 100%;
-  min-width: 124px;
-  height: 38px;
-  padding-inline: 10px;
-  font-size: 13px;
+  min-width: 0;
+  height: 29px;
+  padding-inline: 6px;
+  border-radius: 0;
+  font-size: 12px;
   cursor: default;
 }
 
 .registry-cell-value {
   display: flex;
   width: 100%;
-  min-width: 124px;
-  min-height: 38px;
+  min-width: 0;
+  min-height: 29px;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 0 10px;
+  gap: 5px;
+  padding: 3px 7px;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 7px;
+  border: 0;
+  border-radius: 0;
   color: var(--ink);
   background: #fff;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.25;
   text-align: left;
   text-overflow: ellipsis;
@@ -924,12 +1350,12 @@ fieldset {
 }
 
 .registry-cell-readonly {
-  background: #f8faf9;
+  background: transparent;
 }
 
 .registry-cell-disabled {
   color: #7c8886;
-  background: #f1f4f3;
+  background: #f0f3f2;
 }
 
 .registry-cell-editable {
@@ -937,31 +1363,29 @@ fieldset {
 }
 
 .registry-cell-editable:hover {
-  border-color: #a9c9c2;
-  background: #f2f8f6;
+  background: #eaf5f2;
+  box-shadow: inset 0 0 0 1px #8fc4b9;
 }
 
 .registry-edit-mark {
-  flex: 0 0 auto;
-  color: var(--accent);
-  opacity: 0;
-  transition: opacity 0.15s ease;
+  display: none;
 }
 
-.registry-cell-editable:hover .registry-edit-mark,
-.registry-cell-editable:focus-visible .registry-edit-mark {
-  opacity: 1;
+.registry-cell-value > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .registry-data-cell.is-editing {
   background: #eaf6f3;
-  box-shadow: inset 0 0 0 1px rgba(15, 122, 104, 0.16);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .registry-table .registry-cell-editor {
   border-color: var(--accent);
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(15, 122, 104, 0.13);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .registry-number-link {
@@ -971,25 +1395,40 @@ fieldset {
 }
 
 .registry-number-link:hover {
-  border-color: var(--accent);
   background: #eef8f5;
   text-decoration: underline;
 }
 
 .registry-counterparty {
-  min-width: 260px;
-  max-width: 320px;
+  min-width: 0;
+  max-width: none;
 }
 
 .registry-money-value {
-  min-width: 145px;
+  min-width: 0;
   font-weight: 600;
 }
 
 .registry-cell-actions {
-  min-width: 54px;
+  min-width: 0;
   justify-content: center;
   padding: 0;
+}
+
+.registry-table .icon-button {
+  width: 24px;
+  height: 24px;
+  font-size: 15px;
+}
+
+.add-deal-modal {
+  width: min(680px, 100%);
+}
+
+.add-deal-error {
+  min-height: 20px;
+  margin: 0;
+  color: var(--danger);
 }
 
 .payment-tone-paid {
@@ -1052,8 +1491,8 @@ fieldset {
 .status-badge {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 4px 9px;
+  min-height: 21px;
+  padding: 2px 7px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
@@ -1071,6 +1510,7 @@ fieldset {
 
 .registry-empty {
   padding: 28px 12px;
+  border: 1px solid var(--line);
   color: var(--muted);
   text-align: center;
 }
@@ -1083,6 +1523,80 @@ fieldset {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #fbfcfc;
+}
+
+.sidebar-toggle {
+  position: absolute;
+  top: 64px;
+  right: 0;
+  z-index: 2;
+  display: grid;
+  width: 24px;
+  height: 42px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  color: var(--accent-strong);
+  background: var(--surface);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.sidebar-toggle:hover,
+.sidebar-toggle:focus-visible {
+  background: #eef8f5;
+}
+
+.workspace.sidebar-collapsed {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.sidebar-collapsed .sidebar {
+  padding-inline: 9px;
+}
+
+.sidebar-collapsed .brand {
+  justify-content: center;
+}
+
+.sidebar-collapsed .brand > div,
+.sidebar-collapsed .sidebar-session > div {
+  display: none;
+}
+
+.sidebar-collapsed .nav-item {
+  display: grid;
+  min-height: 42px;
+  place-items: center;
+  padding: 8px;
+  overflow: hidden;
+  text-align: center;
+}
+
+.sidebar-collapsed .nav-label {
+  display: none;
+}
+
+.sidebar-collapsed .nav-icon {
+  display: grid;
+}
+
+.sidebar-collapsed .sidebar-session {
+  padding-inline: 0;
+}
+
+.sidebar-collapsed .sidebar-session .button {
+  min-width: 0;
+  padding-inline: 5px;
+  overflow: hidden;
+  font-size: 0;
+}
+
+.sidebar-collapsed .sidebar-session .button::before {
+  content: "↪";
+  font-size: 18px;
 }
 
 .registry-summary-header {
@@ -1162,7 +1676,7 @@ fieldset {
 
 .registry-summary-label {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.35;
 }
 
@@ -1275,9 +1789,55 @@ fieldset {
     grid-template-columns: 1fr;
   }
 
+  .workspace.sidebar-collapsed {
+    grid-template-columns: 1fr;
+  }
+
   .sidebar {
     border-right: 0;
     border-bottom: 1px solid var(--line);
+  }
+
+  .sidebar-toggle {
+    display: none;
+  }
+
+  .sidebar-collapsed .sidebar {
+    padding: 20px 14px;
+  }
+
+  .sidebar-collapsed .brand {
+    justify-content: flex-start;
+  }
+
+  .sidebar-collapsed .brand > div,
+  .sidebar-collapsed .sidebar-session > div {
+    display: block;
+  }
+
+  .sidebar-collapsed .nav-item {
+    display: flex;
+    min-height: 0;
+    padding: 11px 12px;
+    font-size: inherit;
+    text-align: left;
+  }
+
+  .sidebar-collapsed .sidebar-session .button::before {
+    content: none;
+  }
+
+  .sidebar-collapsed .nav-label {
+    display: inline;
+  }
+
+  .sidebar-collapsed .nav-icon {
+    display: none;
+  }
+
+  .sidebar-collapsed .sidebar-session .button {
+    padding-inline: 18px;
+    font-size: inherit;
   }
 
   .nav-list {
@@ -1293,6 +1853,15 @@ fieldset {
 
   .topbar {
     display: grid;
+  }
+
+  .registry-top-controls {
+    min-width: 0;
+    justify-items: stretch;
+  }
+
+  .registry-top-controls .top-actions {
+    justify-content: flex-start;
   }
 
   .span-4,
@@ -1335,6 +1904,15 @@ fieldset {
     display: grid;
   }
 
+  .registry-scale-control {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) 48px;
+  }
+
+  .registry-scale-control > span {
+    grid-column: 1 / -1;
+  }
+
   .modal {
     padding: 12px;
   }
@@ -1349,6 +1927,7 @@ fieldset {
   .registry-filters,
   .registry-admin-row,
   .registry-summary-grid,
+  .column-settings-grid,
   .tech-card-header,
   .user-create-grid,
   .user-row,

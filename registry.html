@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Реестр договоров</title>
-    <link rel="stylesheet" href="styles.css?v=20260702-registry-6" />
+    <title>Реестр сделок</title>
+    <link rel="stylesheet" href="styles.css?v=20260702-autofit-local-3" />
   </head>
   <body>
     <main class="app-shell">
@@ -12,11 +12,11 @@
         <aside class="sidebar" aria-label="Разделы приложения">
           <div class="brand">
             <span class="brand-mark">Д</span>
-            <div><strong>Договоры</strong><small>рабочее пространство</small></div>
+            <div><strong>Сделки</strong><small>рабочее пространство</small></div>
           </div>
           <nav class="nav-list">
             <a class="nav-item" href="index.html">Создать Договор и Счет</a>
-            <a class="nav-item active" href="registry.html">Реестр договоров</a>
+            <a class="nav-item active" href="registry.html">Реестр сделок</a>
             <a class="nav-item hidden" href="library.html" data-admin-only>Справочник</a>
             <a class="nav-item hidden" href="users.html" data-admin-only>Пользователи</a>
           </nav>
@@ -28,15 +28,28 @@
 
         <section class="content">
           <header class="topbar">
-            <div><p class="eyebrow">Реестр</p><h1>Договоры</h1></div>
-            <button class="button ghost" id="reloadRegistryButton" type="button">Обновить</button>
+            <div><p class="eyebrow">Реестр</p><h1>Сделки</h1></div>
+            <div class="registry-top-controls">
+              <div class="top-actions">
+                <button class="button ghost" id="reloadRegistryButton" type="button">Обновить</button>
+                <button class="button ghost" id="columnSettingsButton" type="button">Настроить столбцы</button>
+                <button class="button primary" id="addDealButton" type="button">Добавить сделку</button>
+              </div>
+              <label class="registry-scale-control" for="registryScaleInput">
+                <span>Масштаб таблицы</span>
+                <input id="registryScaleInput" type="range" min="50" max="125" step="5" value="100" />
+                <output id="registryScaleOutput" for="registryScaleInput">100%</output>
+              </label>
+            </div>
           </header>
           <section class="form-area library-content">
-            <section class="panel">
+            <section class="panel registry-panel">
+              <div class="registry-sheet-viewport" id="registrySheetViewport">
+                <div class="registry-sheet" id="registrySheet">
               <div class="registry-toolbar">
                 <label>
-                  <span>Поиск по номеру или контрагенту</span>
-                  <input id="registrySearchInput" placeholder="Введите номер или название" />
+                  <span>Поиск по номеру, названию или контрагенту</span>
+                  <input id="registrySearchInput" placeholder="Введите номер, название или контрагента" />
                 </label>
               </div>
               <div class="registry-filters" aria-label="Фильтры реестра">
@@ -86,29 +99,49 @@
               <p class="status-line" id="registryStatus"></p>
               <div class="registry-table-wrap">
                 <table class="registry-table">
+                  <colgroup>
+                    <col data-column="number" />
+                    <col data-column="date" />
+                    <col data-column="title" />
+                    <col data-column="counterparty" />
+                    <col data-column="amount" />
+                    <col data-column="source" />
+                    <col data-column="paymentStatus" />
+                    <col data-column="prepayment" />
+                    <col data-column="remainder" />
+                    <col data-column="paymentType" />
+                    <col data-column="closingDocs" />
+                    <col data-column="dealStatus" />
+                    <col data-column="bonusType" />
+                    <col data-column="bonusAmount" />
+                    <col data-column="recordStatus" />
+                    <col data-column="manager" />
+                    <col data-column="delete" />
+                  </colgroup>
                   <thead>
                     <tr>
-                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="number" type="button">Номер<span aria-hidden="true">↕</span></button></th>
-                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="date" type="button">Дата<span aria-hidden="true">↕</span></button></th>
-                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="counterparty" type="button">Контрагент<span aria-hidden="true">↕</span></button></th>
-                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="amount" type="button">Сумма<span aria-hidden="true">↕</span></button></th>
-                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="source" type="button">Источник<span aria-hidden="true">↕</span></button></th>
-                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="paymentStatus" type="button">Оплачен<span aria-hidden="true">↕</span></button></th>
-                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="prepayment" type="button">Предоплата<span aria-hidden="true">↕</span></button></th>
-                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="remainder" type="button">Остаток<span aria-hidden="true">↕</span></button></th>
-                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="paymentType" type="button">Вид оплаты<span aria-hidden="true">↕</span></button></th>
-                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="closingDocs" type="button">Закрывашки<span aria-hidden="true">↕</span></button></th>
-                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="dealStatus" type="button">Статус сделки<span aria-hidden="true">↕</span></button></th>
-                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="bonusType" type="button">Тип бонуса<span aria-hidden="true">↕</span></button></th>
-                      <th scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="bonusAmount" type="button">Сумма бонуса<span aria-hidden="true">↕</span></button></th>
-                      <th class="hidden" data-admin-only scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="recordStatus" type="button">Статус<span aria-hidden="true">↕</span></button></th>
-                      <th class="hidden" data-admin-only scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="manager" type="button">Менеджер<span aria-hidden="true">↕</span></button></th>
-                      <th class="hidden" data-admin-only scope="col">Удаление</th>
+                      <th data-column="number" scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="number" type="button">Номер<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="number" aria-hidden="true"></span></th>
+                      <th data-column="date" scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="date" type="button">Дата<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="date" aria-hidden="true"></span></th>
+                      <th data-column="title" scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="title" type="button">Название<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="title" aria-hidden="true"></span></th>
+                      <th data-column="counterparty" scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="counterparty" type="button">Контрагент<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="counterparty" aria-hidden="true"></span></th>
+                      <th data-column="amount" scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="amount" type="button">Сумма<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="amount" aria-hidden="true"></span></th>
+                      <th data-column="source" scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="source" type="button">Источник<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="source" aria-hidden="true"></span></th>
+                      <th data-column="paymentStatus" scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="paymentStatus" type="button">Оплачен<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="paymentStatus" aria-hidden="true"></span></th>
+                      <th data-column="prepayment" scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="prepayment" type="button">Предоплата<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="prepayment" aria-hidden="true"></span></th>
+                      <th data-column="remainder" scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="remainder" type="button">Остаток<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="remainder" aria-hidden="true"></span></th>
+                      <th data-column="paymentType" scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="paymentType" type="button">Вид оплаты<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="paymentType" aria-hidden="true"></span></th>
+                      <th data-column="closingDocs" scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="closingDocs" type="button">Закрывашки<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="closingDocs" aria-hidden="true"></span></th>
+                      <th data-column="dealStatus" scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="dealStatus" type="button">Статус сделки<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="dealStatus" aria-hidden="true"></span></th>
+                      <th data-column="bonusType" scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="bonusType" type="button">Тип бонуса<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="bonusType" aria-hidden="true"></span></th>
+                      <th data-column="bonusAmount" scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="bonusAmount" type="button">Сумма бонуса<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="bonusAmount" aria-hidden="true"></span></th>
+                      <th class="hidden" data-column="recordStatus" data-admin-only scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="recordStatus" type="button">Статус<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="recordStatus" aria-hidden="true"></span></th>
+                      <th class="hidden" data-column="manager" data-admin-only scope="col" aria-sort="none"><button class="registry-sort-button" data-sort-field="manager" type="button">Менеджер<span aria-hidden="true">↕</span></button><span class="registry-column-resizer" data-resize-column="manager" aria-hidden="true"></span></th>
+                      <th class="hidden" data-column="delete" data-admin-only scope="col"><span class="registry-delete-heading">Удаление</span><span class="registry-column-resizer" data-resize-column="delete" aria-hidden="true"></span></th>
                     </tr>
                   </thead>
                   <tbody id="registryTableBody"></tbody>
                 </table>
-                <div class="registry-empty hidden" id="registryEmpty">В реестре пока нет договоров.</div>
+                <div class="registry-empty hidden" id="registryEmpty">В реестре пока нет сделок.</div>
               </div>
               <section class="registry-summary" aria-label="Свод по суммам">
                 <div class="registry-summary-header">
@@ -117,13 +150,72 @@
                 </div>
                 <div class="registry-summary-grid" id="registrySummary"></div>
               </section>
+                </div>
+              </div>
+              <div class="registry-sticky-scrollbar hidden" id="registryStickyScrollbar" aria-label="Горизонтальная прокрутка таблицы">
+                <div id="registryStickyScrollbarSpacer"></div>
+              </div>
             </section>
           </section>
         </section>
       </section>
     </main>
-    <script src="auth.js?v=20260618-auth-1"></script>
-    <script src="registry-storage-sync.js?v=20260630-registry-1"></script>
-    <script src="registry.js?v=20260702-registry-7"></script>
+    <div class="modal hidden" id="addDealModal" role="dialog" aria-modal="true" aria-labelledby="addDealModalTitle">
+      <form class="modal-panel add-deal-modal" id="addDealForm">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Новая запись</p>
+            <h2 id="addDealModalTitle">Добавить планируемую сделку</h2>
+          </div>
+          <button class="icon-button" id="closeAddDealModal" type="button" aria-label="Закрыть">×</button>
+        </div>
+        <div class="grid two">
+          <label>
+            <span>Название *</span>
+            <input id="newDealTitle" maxlength="160" required placeholder="Например, вывеска для нового офиса" />
+          </label>
+          <label>
+            <span>Номер договора</span>
+            <input id="newDealNumber" maxlength="80" placeholder="Можно оставить пустым" />
+          </label>
+          <label>
+            <span>Сумма *</span>
+            <input id="newDealAmount" type="number" min="0.01" step="0.01" required placeholder="0,00" />
+          </label>
+          <label>
+            <span>Источник *</span>
+            <select id="newDealSource" required>
+              <option value="">Выберите источник</option>
+            </select>
+          </label>
+        </div>
+        <p class="status-line add-deal-error" id="addDealError" role="alert"></p>
+        <div class="modal-actions">
+          <button class="button ghost" id="cancelAddDealButton" type="button">Отмена</button>
+          <button class="button primary" type="submit">Добавить сделку</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal hidden" id="columnSettingsModal" role="dialog" aria-modal="true" aria-labelledby="columnSettingsModalTitle">
+      <section class="modal-panel column-settings-modal">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Вид таблицы</p>
+            <h2 id="columnSettingsModalTitle">Настройка столбцов</h2>
+          </div>
+          <button class="icon-button" id="closeColumnSettingsModal" type="button" aria-label="Закрыть">×</button>
+        </div>
+        <p class="column-settings-help">Отметьте нужные столбцы. Ширину можно менять мышкой за правую границу заголовка.</p>
+        <div class="column-settings-grid" id="columnSettingsList"></div>
+        <div class="modal-actions">
+          <button class="button ghost" id="showAllColumnsButton" type="button">Показать все</button>
+          <button class="button ghost" id="resetColumnWidthsButton" type="button">Сбросить ширину</button>
+          <button class="button primary" id="finishColumnSettingsButton" type="button">Готово</button>
+        </div>
+      </section>
+    </div>
+    <script src="auth.js?v=20260702-sidebar-icons-local-1"></script>
+    <script src="registry-storage-sync.js?v=20260702-deals-local-1"></script>
+    <script src="registry.js?v=20260702-autofit-local-3"></script>
   </body>
 </html>

@@ -78,6 +78,7 @@ let itemId = 0;
 let techId = 0;
 let activeTechCard = null;
 let techPresets = [...DEFAULT_TECH_PRESETS];
+let openedRegistryContext = null;
 
 const GITHUB_OWNER = "jenechkakor-web";
 const GITHUB_REPO = "manager-web-app";
@@ -701,6 +702,10 @@ function collectData() {
       grandTotal: total,
     },
     mockups: technicalBlocks.flatMap((block) => block.mockups),
+    registryDealTitle: openedRegistryContext?.title || "",
+    registryDealSource: openedRegistryContext?.source || "",
+    registryDealWithoutNumber: Boolean(openedRegistryContext?.placeholderNumber),
+    registryPlaceholderNumber: openedRegistryContext?.placeholderNumber || "",
   };
 }
 
@@ -2703,6 +2708,14 @@ function loadDraft() {
   localStorage.removeItem(window.ManagerAuth.storageKey("dadataToken"));
   const registryData = window.ContractRegistry?.getContractToOpen();
   if (registryData) {
+    openedRegistryContext = {
+      title: String(registryData.registryDealTitle || ""),
+      source: String(registryData.registryDealSource || ""),
+      placeholderNumber: String(registryData.registryPlaceholderNumber || ""),
+    };
+    if (openedRegistryContext.placeholderNumber) {
+      sessionStorage.setItem(DRAFT_REGISTRY_NUMBER_KEY, openedRegistryContext.placeholderNumber);
+    }
     loadDraftData(registryData);
     return;
   }

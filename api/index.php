@@ -64,6 +64,14 @@ function has_index(PDO $pdo, $table, $index)
     return (int) $statement->fetchColumn() > 0;
 }
 
+function has_table(PDO $pdo, $table)
+{
+    $statement = $pdo->prepare('SELECT COUNT(*) FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name');
+    $statement->execute([':table_name' => $table]);
+    return (int) $statement->fetchColumn() > 0;
+}
+
 function initialize_database(PDO $pdo, array $config)
 {
     $pdo->exec("CREATE TABLE IF NOT EXISTS manager_users (
@@ -116,6 +124,14 @@ function initialize_database(PDO $pdo, array $config)
             SELECT record_number, owner_id, contract_date, counterparty, amount, status, updated_at, data_json
             FROM manager_contracts');
         $pdo->exec('ALTER TABLE manager_contracts ADD COLUMN registry_meta_json LONGTEXT NULL AFTER data_json');
+    }
+    $registryBackupTable = 'manager_contracts_backup_20260702_pre_registry_ui';
+    if (!has_table($pdo, $registryBackupTable)) {
+        $pdo->exec('CREATE TABLE ' . $registryBackupTable . ' LIKE manager_contracts');
+        $pdo->exec('INSERT INTO ' . $registryBackupTable . '
+            (record_number, owner_id, contract_date, counterparty, amount, status, updated_at, data_json, registry_meta_json)
+            SELECT record_number, owner_id, contract_date, counterparty, amount, status, updated_at, data_json, registry_meta_json
+            FROM manager_contracts');
     }
     $statement = $pdo->prepare('UPDATE manager_contracts SET owner_id = :admin_id WHERE owner_id IS NULL');
     $statement->execute([':admin_id' => $adminId]);
@@ -204,6 +220,7 @@ function normalize_registry_meta(array $record, array $data, $amount)
         ? template_prepayment($data, $amount)
         : round_money(max(0, min((float) $amount, (float) $rawPrepayment)));
     return [
+        'title' => trim((string) (isset($source['title']) ? $source['title'] : '')),
         'source' => normalize_choice(isset($source['source']) ? $source['source'] : '', ['Директ', 'Агент', 'Повтор', 'Сарафан', 'Авито', 'Парсинг', 'SEO', 'Профи.ру'], ''),
         'paymentStatus' => normalize_choice(isset($source['paymentStatus']) ? $source['paymentStatus'] : '', ['Да', 'Предоплата', 'Планируется'], 'Планируется'),
         'prepayment' => $prepayment,

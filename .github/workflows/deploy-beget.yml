@@ -92,6 +92,9 @@ jobs:
           upload_public=false
           for file in "${files[@]}"; do
             case "$file" in
+              server.js)
+                continue
+                ;;
               .htaccess|*.html|*.js|*.css|*.docx|assets/*|templates/tech-presets.json|templates/contracts-registry.json)
                 if [[ -f "$file" ]]; then
                   if [[ "$file" == "assets/ip-signature.png" ]]; then
@@ -123,6 +126,32 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes lftp
+
+      - name: Back up current production files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p backup-live
+          lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
+          set ftp:ssl-force true
+          set ftp:ssl-protect-data true
+          set ssl:verify-certificate true
+          set net:max-retries 6
+          set net:timeout 20
+          set net:reconnect-interval-base 5
+          set cmd:fail-exit true
+          mirror --verbose --parallel=1 --exclude-glob api/config.local.php --exclude-glob api/dadata.local.php --exclude-glob .ftpquota / backup-live/
+          bye
+          LFTP_COMMANDS
+          find backup-live -type f -print0 | sort -z | xargs -0 sha256sum > backup-live/SHA256SUMS.txt
+
+      - name: Store production backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: manager-live-before-${{ github.run_id }}
+          path: backup-live/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload core API to Beget
         if: steps.prepare.outputs.upload_api == 'true'

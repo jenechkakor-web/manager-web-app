@@ -99,6 +99,7 @@ function normalizeRegistryMeta(entry, data, amount) {
     ? templatePrepayment(data, amount)
     : roundMoney(Math.max(0, Math.min(amount, Number(rawPrepayment) || 0)));
   return {
+    title: String(source.title || "").trim(),
     source: normalizeChoice(source.source, SOURCE_OPTIONS, ""),
     paymentStatus: normalizeChoice(source.paymentStatus, PAYMENT_STATUS_OPTIONS, "Планируется"),
     prepayment,
