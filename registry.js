@@ -48,7 +48,7 @@ const tableScaleOutput = document.querySelector("#registryScaleOutput");
 
 let records = [];
 let editingCell = null;
-let sortState = { field: null, direction: "asc" };
+let sortState = { field: "date", direction: "desc" };
 let appliedDateRange = { from: "", to: "" };
 let hiddenColumns = new Set();
 let columnWidths = {};
