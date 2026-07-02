@@ -125,6 +125,7 @@ function initialize_database(PDO $pdo, array $config)
             FROM manager_contracts');
         $pdo->exec('ALTER TABLE manager_contracts ADD COLUMN registry_meta_json LONGTEXT NULL AFTER data_json');
     }
+    // One-time snapshot before the production deals-registry interface rollout.
     $registryBackupTable = 'manager_contracts_backup_20260702_pre_registry_ui';
     if (!has_table($pdo, $registryBackupTable)) {
         $pdo->exec('CREATE TABLE ' . $registryBackupTable . ' LIKE manager_contracts');

@@ -1,4 +1,5 @@
 (function () {
+  // Shared navigation behavior for every authenticated production page.
   const serverAuthHosts = new Set(["manager.verkup.ru", "localhost", "127.0.0.1"]);
   const usesServerAuth = serverAuthHosts.has(window.location.hostname);
   const state = { user: null };
