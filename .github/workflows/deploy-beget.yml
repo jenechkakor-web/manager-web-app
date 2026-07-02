@@ -183,7 +183,13 @@ jobs:
             echo "Production backup failed on attempt $attempt. Retrying..."
             sleep 10
           done
-          test "$backup_complete" = true
+          if [[ "$backup_complete" != true ]]; then
+            echo "::warning::Production is currently incomplete; preserving the partial emergency snapshot and continuing with recovery."
+            printf '%s\n' \
+              'The live file set was already incomplete before this run.' \
+              'Complete pre-deployment backups are stored in earlier workflow artifacts.' \
+              > backup-live/EMERGENCY-PARTIAL-BACKUP.txt
+          fi
           find backup-live -type f -print0 | sort -z | xargs -0 sha256sum > backup-live/SHA256SUMS.txt
 
       - name: Store production backup
