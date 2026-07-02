@@ -131,7 +131,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p backup-live
+          mkdir -p backup-live backup-live/assets backup-live/api backup-live/templates
           lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
           set ftp:ssl-force true
           set ftp:ssl-protect-data true
@@ -140,7 +140,27 @@ jobs:
           set net:timeout 20
           set net:reconnect-interval-base 5
           set cmd:fail-exit true
-          mirror --verbose --parallel=1 --exclude-glob api/config.local.php --exclude-glob api/dadata.local.php --exclude-glob .ftpquota / backup-live/
+          get /.htaccess -o backup-live/.htaccess
+          get /index.html -o backup-live/index.html
+          get /login.html -o backup-live/login.html
+          get /registry.html -o backup-live/registry.html
+          get /library.html -o backup-live/library.html
+          get /users.html -o backup-live/users.html
+          get /app.js -o backup-live/app.js
+          get /auth.js -o backup-live/auth.js
+          get /login.js -o backup-live/login.js
+          get /registry-storage-sync.js -o backup-live/registry-storage-sync.js
+          get /registry.js -o backup-live/registry.js
+          get /library.js -o backup-live/library.js
+          get /users.js -o backup-live/users.js
+          get /styles.css -o backup-live/styles.css
+          get /dogovor_final.docx -o backup-live/dogovor_final.docx
+          get /invoice_template.docx -o backup-live/invoice_template.docx
+          get /schet_dogovor_template.docx -o backup-live/schet_dogovor_template.docx
+          get /schet_dogovor_zamery_template.docx -o backup-live/schet_dogovor_zamery_template.docx
+          mirror --verbose --parallel=1 /assets backup-live/assets
+          mirror --verbose --parallel=1 --exclude-glob config.local.php --exclude-glob dadata.local.php /api backup-live/api
+          mirror --verbose --parallel=1 /templates backup-live/templates
           bye
           LFTP_COMMANDS
           find backup-live -type f -print0 | sort -z | xargs -0 sha256sum > backup-live/SHA256SUMS.txt
