@@ -76,11 +76,19 @@ jobs:
               esac
             done
             files+=(
+              ".htaccess"
               "index.html"
-              "app.js"
+              "login.html"
               "registry.html"
+              "library.html"
+              "users.html"
+              "app.js"
+              "auth.js"
+              "login.js"
               "registry-storage-sync.js"
               "registry.js"
+              "library.js"
+              "users.js"
               "styles.css"
               "assets/ip-signature.png"
               "assets/ip-stamp.png"
@@ -131,8 +139,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p backup-live backup-live/assets backup-live/api backup-live/templates
-          lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
+          backup_complete=false
+          for attempt in 1 2 3; do
+            rm -rf backup-live
+            mkdir -p backup-live backup-live/assets backup-live/api backup-live/templates
+            if lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
           set ftp:ssl-force true
           set ftp:ssl-protect-data true
           set ssl:verify-certificate true
@@ -150,10 +161,12 @@ jobs:
           get /auth.js -o backup-live/auth.js
           get /login.js -o backup-live/login.js
           get /registry-storage-sync.js -o backup-live/registry-storage-sync.js
+          set cmd:fail-exit false
           get /registry.js -o backup-live/registry.js
+          get /styles.css -o backup-live/styles.css
+          set cmd:fail-exit true
           get /library.js -o backup-live/library.js
           get /users.js -o backup-live/users.js
-          get /styles.css -o backup-live/styles.css
           get /dogovor_final.docx -o backup-live/dogovor_final.docx
           get /invoice_template.docx -o backup-live/invoice_template.docx
           get /schet_dogovor_template.docx -o backup-live/schet_dogovor_template.docx
@@ -163,6 +176,14 @@ jobs:
           mirror --verbose --parallel=1 /templates backup-live/templates
           bye
           LFTP_COMMANDS
+            then
+              backup_complete=true
+              break
+            fi
+            echo "Production backup failed on attempt $attempt. Retrying..."
+            sleep 10
+          done
+          test "$backup_complete" = true
           find backup-live -type f -print0 | sort -z | xargs -0 sha256sum > backup-live/SHA256SUMS.txt
 
       - name: Store production backup
