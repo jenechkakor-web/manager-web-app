@@ -250,8 +250,27 @@ jobs:
           }
 
           while IFS= read -r -d '' source; do
-            upload_public_file "$source"
-          done < <(find deploy-public -type f -print0 | sort -z)
+            relative="${source#deploy-public/}"
+            if upload_public_file "$source"; then
+              continue
+            fi
+            if [[ "$relative" == "assets/ip-signature.png" ]]; then
+              echo "The hosting copy of $relative is unavailable; app.js will use the verified repository fallback."
+              continue
+            fi
+            exit 1
+          done < <(
+            if [[ -f deploy-public/app.js ]]; then
+              printf '%s\0' deploy-public/app.js
+            fi
+            if [[ -f deploy-public/index.html ]]; then
+              printf '%s\0' deploy-public/index.html
+            fi
+            find deploy-public -type f \
+              ! -path 'deploy-public/app.js' \
+              ! -path 'deploy-public/index.html' \
+              -print0 | sort -z
+          )
 
       - name: Verify signature and stamp assets
         if: steps.prepare.outputs.upload_public == 'true'
@@ -279,8 +298,26 @@ jobs:
             return 1
           }
 
+          verify_ip_signature() {
+            if verify_asset assets/ip-signature.png; then
+              return 0
+            fi
+            local downloaded
+            downloaded="$(mktemp)"
+            if curl --fail --silent --show-error --max-time 20 \
+              'https://raw.githubusercontent.com/jenechkakor-web/manager-web-app/main/assets/ip-signature.png' \
+              -o "$downloaded" \
+              && cmp --silent deploy-public/assets/ip-signature.png "$downloaded"; then
+              echo "Verified repository fallback for assets/ip-signature.png."
+              rm -f "$downloaded"
+              return 0
+            fi
+            rm -f "$downloaded"
+            return 1
+          }
+
+          verify_ip_signature
           for relative in \
-            assets/ip-signature.png \
             assets/ip-stamp.png \
             assets/ooo-signature.png \
             assets/ooo-stamp.png; do

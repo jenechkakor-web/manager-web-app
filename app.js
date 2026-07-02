@@ -198,6 +198,21 @@ function fetchRepositoryAsset(path, options = {}) {
   return fetch(repositoryAssetUrl(path), options);
 }
 
+function rawRepositoryAssetUrl(path) {
+  const cleanPath = String(path || "").replace(/^\.?\//, "");
+  return `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${cleanPath}`;
+}
+
+async function fetchSellerAsset(path, options = {}) {
+  try {
+    const response = await fetchRepositoryAsset(path, options);
+    if (response.ok) return response;
+  } catch {
+    // The repository copy below is the fallback when a hosting asset is unavailable.
+  }
+  return fetch(rawRepositoryAssetUrl(path), options);
+}
+
 function techPresetEndpoints() {
   if (window.ManagerAuth?.usesServerAuth) return [cacheBusted("/api/tech-presets")];
   const endpoints = [cacheBusted("templates/tech-presets.json"), cacheBusted(GITHUB_RAW_PRESETS_URL)];
@@ -1849,7 +1864,7 @@ async function loadSellerSignatureSealFiles(data, options = {}) {
   const loaded = await Promise.all(
     entries.map(async (entry, index) => {
       try {
-        const response = await fetchRepositoryAsset(entry.path, { cache: "no-store" });
+        const response = await fetchSellerAsset(entry.path, { cache: "no-store" });
         if (!response.ok) return null;
         const blob = await response.blob();
         const src = await blobToDataUrl(blob);
