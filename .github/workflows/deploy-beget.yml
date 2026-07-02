@@ -214,23 +214,75 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for attempt in 1 2 3; do
-            if lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" <<'LFTP_COMMANDS'
-          set ftp:ssl-force true
-          set ftp:ssl-protect-data true
-          set ssl:verify-certificate true
-          set net:max-retries 6
-          set net:timeout 20
-          set net:reconnect-interval-base 3
-          set xfer:clobber true
-          set cmd:fail-exit true
-          mirror --reverse --verbose --parallel=1 --no-perms deploy-public/ /
-          bye
-          LFTP_COMMANDS
-            then
-              exit 0
+          upload_public_file() {
+            local source="$1"
+            local relative="${source#deploy-public/}"
+            local destination="/$relative"
+            local destination_dir
+            local mkdir_command=""
+            destination_dir="$(dirname "$destination")"
+            if [[ "$destination_dir" != "/" ]]; then
+              mkdir_command="mkdir -p \"$destination_dir\";"
             fi
-            echo "Public upload failed on attempt $attempt. Retrying..."
-            sleep 10
+
+            for attempt in 1 2 3; do
+              if lftp -u "$FTP_USERNAME,$FTP_PASSWORD" "ftp://$FTP_SERVER" -e "
+                set ftp:ssl-force true;
+                set ftp:ssl-protect-data true;
+                set ssl:verify-certificate true;
+                set net:max-retries 6;
+                set net:timeout 20;
+                set net:reconnect-interval-base 5;
+                set xfer:clobber true;
+                set cmd:fail-exit true;
+                $mkdir_command
+                put \"$source\" -o \"$destination.uploading\";
+                mv \"$destination.uploading\" \"$destination\";
+                bye;
+              "; then
+                echo "Uploaded $relative."
+                return 0
+              fi
+              echo "Upload of $relative failed on attempt $attempt. Retrying..."
+              sleep 10
+            done
+            return 1
+          }
+
+          while IFS= read -r -d '' source; do
+            upload_public_file "$source"
+          done < <(find deploy-public -type f -print0 | sort -z)
+
+      - name: Verify signature and stamp assets
+        if: steps.prepare.outputs.upload_public == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          verify_asset() {
+            local relative="$1"
+            local source="deploy-public/$relative"
+            local downloaded
+            downloaded="$(mktemp)"
+            for attempt in 1 2 3; do
+              if curl --fail --silent --show-error --max-time 20 \
+                -H 'Cache-Control: no-cache' \
+                "https://manager.verkup.ru/$relative" -o "$downloaded" \
+                && cmp --silent "$source" "$downloaded"; then
+                echo "Verified $relative."
+                rm -f "$downloaded"
+                return 0
+              fi
+              echo "Verification of $relative failed on attempt $attempt. Retrying..."
+              sleep 5
+            done
+            rm -f "$downloaded"
+            return 1
+          }
+
+          for relative in \
+            assets/ip-signature.png \
+            assets/ip-stamp.png \
+            assets/ooo-signature.png \
+            assets/ooo-stamp.png; do
+            verify_asset "$relative"
           done
-          exit 1
