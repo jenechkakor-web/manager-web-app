@@ -1,0 +1,103 @@
+<!doctype html>
+<html class="auth-pending" lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Дашборд администратора</title>
+    <link rel="stylesheet" href="styles.css?v=20260710-dashboard-1" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace">
+        <aside class="sidebar" aria-label="Разделы приложения">
+          <div class="brand">
+            <span class="brand-mark">Д</span>
+            <div><strong>Сделки</strong><small>рабочее пространство</small></div>
+          </div>
+          <nav class="nav-list">
+            <a class="nav-item" href="index.html">Создать Договор и Счет</a>
+            <a class="nav-item" href="registry.html">Реестр сделок</a>
+            <a class="nav-item active hidden" href="dashboard.html" data-admin-only>Дашборд</a>
+            <a class="nav-item hidden" href="library.html" data-admin-only>Справочник</a>
+            <a class="nav-item hidden" href="users.html" data-admin-only>Пользователи</a>
+          </nav>
+          <div class="sidebar-session">
+            <div><strong data-auth-login></strong><small data-auth-role></small></div>
+            <button class="button ghost" type="button" data-logout>Выйти</button>
+          </div>
+        </aside>
+
+        <section class="content">
+          <header class="topbar">
+            <div>
+              <p class="eyebrow">Администрирование</p>
+              <h1>Дашборд продаж</h1>
+              <p>Статистика по менеджерам и источникам за выбранный период.</p>
+            </div>
+            <div class="top-actions">
+              <button class="button ghost" id="downloadDashboardCsvButton" type="button">Скачать CSV</button>
+              <button class="button ghost" id="reloadDashboardButton" type="button">Обновить</button>
+            </div>
+          </header>
+
+          <section class="form-area dashboard-content">
+            <section class="panel dashboard-filter-panel">
+              <div class="dashboard-filters">
+                <label>
+                  <span>Дата с</span>
+                  <input id="dashboardDateFrom" type="date" />
+                </label>
+                <label>
+                  <span>Дата по</span>
+                  <input id="dashboardDateTo" type="date" />
+                </label>
+                <label>
+                  <span>Менеджер</span>
+                  <select id="dashboardManagerFilter"><option value="">Все менеджеры</option></select>
+                </label>
+                <label>
+                  <span>Источник</span>
+                  <select id="dashboardSourceFilter"><option value="">Все источники</option></select>
+                </label>
+                <div class="dashboard-filter-actions">
+                  <button class="button primary" id="applyDashboardPeriodButton" type="button">Применить</button>
+                  <button class="button ghost" id="dashboardCurrentMonthButton" type="button">Этот месяц</button>
+                  <button class="button ghost" id="dashboardAllPeriodButton" type="button">Весь период</button>
+                </div>
+              </div>
+              <p class="status-line" id="dashboardStatus" role="status" aria-live="polite"></p>
+            </section>
+
+            <section class="dashboard-kpi-grid" id="dashboardKpiGrid" aria-label="Сводные показатели"></section>
+
+            <section class="panel dashboard-source-summary" aria-labelledby="dashboardSourceSummaryTitle">
+              <div class="panel-title dashboard-source-summary-title">
+                <h2 id="dashboardSourceSummaryTitle">Свод по источникам</h2>
+                <p>Карточки учитывают текущий период и выбранные фильтры.</p>
+              </div>
+              <div class="dashboard-source-grid" id="dashboardSourceSummaryGrid"></div>
+            </section>
+
+            <section class="panel dashboard-table-panel">
+              <div class="panel-title row-title dashboard-table-title">
+                <div>
+                  <h2 id="dashboardTableTitle">Разбивка по менеджерам</h2>
+                  <p id="dashboardTableSubtitle"></p>
+                </div>
+                <div class="dashboard-tabs" aria-label="Разрез статистики">
+                  <button class="dashboard-tab is-active" data-dashboard-view="manager" type="button">Менеджеры</button>
+                  <button class="dashboard-tab" data-dashboard-view="source" type="button">Источники</button>
+                  <button class="dashboard-tab" data-dashboard-view="managerSource" type="button">Менеджер + источник</button>
+                </div>
+              </div>
+              <div class="dashboard-table-wrap" id="dashboardTableWrap"></div>
+            </section>
+          </section>
+        </section>
+      </section>
+    </main>
+    <script src="auth.js?v=20260710-dashboard-1"></script>
+    <script src="registry-storage-sync.js?v=20260702-deals-prod-1"></script>
+    <script src="dashboard.js?v=20260710-dashboard-1"></script>
+  </body>
+</html>

@@ -55,8 +55,8 @@ jobs:
             upload_api=true
             files=(
               .htaccess
-              index.html login.html registry.html library.html users.html
-              app.js auth.js login.js registry-storage-sync.js registry.js library.js users.js styles.css
+              index.html login.html registry.html dashboard.html library.html users.html
+              app.js auth.js login.js registry-storage-sync.js registry.js dashboard.js library.js users.js styles.css
               dogovor_final.docx invoice_template.docx
               schet_dogovor_template.docx schet_dogovor_zamery_template.docx
               templates/tech-presets.json templates/contracts-registry.json
@@ -80,6 +80,7 @@ jobs:
               "index.html"
               "login.html"
               "registry.html"
+              "dashboard.html"
               "library.html"
               "users.html"
               "app.js"
@@ -87,6 +88,7 @@ jobs:
               "login.js"
               "registry-storage-sync.js"
               "registry.js"
+              "dashboard.js"
               "library.js"
               "users.js"
               "styles.css"
@@ -155,6 +157,10 @@ jobs:
           get /index.html -o backup-live/index.html
           get /login.html -o backup-live/login.html
           get /registry.html -o backup-live/registry.html
+          set cmd:fail-exit false
+          get /dashboard.html -o backup-live/dashboard.html
+          get /dashboard.js -o backup-live/dashboard.js
+          set cmd:fail-exit true
           get /library.html -o backup-live/library.html
           get /users.html -o backup-live/users.html
           get /app.js -o backup-live/app.js
