@@ -404,7 +404,10 @@ function statusLabel(status) {
 }
 
 function isNumberlessDeal(record) {
-  return Boolean(record?.data?.registryDealWithoutNumber && record?.data?.registryPlaceholderNumber === record.number);
+  return Boolean(
+    (record?.data?.registryDealWithoutNumber && record?.data?.registryPlaceholderNumber === record.number)
+      || String(record?.number || "").startsWith("Планируемая сделка без номера "),
+  );
 }
 
 function displayRecordNumber(record) {
@@ -836,9 +839,17 @@ async function loadRecords() {
   }
 }
 
-function openRecord(number) {
-  const record = records.find((item) => item.number === number);
-  if (!record) return;
+async function openRecord(number) {
+  const summaryRecord = records.find((item) => item.number === number);
+  if (!summaryRecord) return;
+  setStatus(`Загружаю данные по сделке ${displayRecordNumber(summaryRecord)}...`);
+  let record;
+  try {
+    record = await window.ContractRegistry.loadRecord(number);
+  } catch (error) {
+    setStatus(error.message || "Не удалось загрузить данные договора.");
+    return;
+  }
   const data = {
     ...record.data,
     contractNumber: isNumberlessDeal(record) ? "" : (record.data?.contractNumber || record.number),
@@ -1202,7 +1213,7 @@ tableBody.addEventListener("click", (event) => {
   const numberLink = event.target.closest("[data-open-number]");
   if (numberLink) {
     event.preventDefault();
-    openRecord(numberLink.dataset.openNumber);
+    void openRecord(numberLink.dataset.openNumber);
     return;
   }
   const editButton = event.target.closest("[data-edit-field]");

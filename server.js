@@ -225,7 +225,8 @@ function recordsForUser(records, users, user) {
     .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 }
 
-async function handleApi(req, res, pathname) {
+async function handleApi(req, res, url) {
+  const { pathname } = url;
   if (req.method === "GET" && pathname === "/api/health") {
     sendJson(res, 200, { ok: true, database: true });
     return;
@@ -356,7 +357,15 @@ async function handleApi(req, res, pathname) {
     const users = await readJson(usersPath);
     let records = (await readJson(registryPath)).map((record) => normalizeRecord(record)).filter(Boolean);
     if (req.method === "GET") {
-      sendJson(res, 200, recordsForUser(records, users, user));
+      const visibleRecords = recordsForUser(records, users, user);
+      const number = String(url.searchParams.get("number") || "").trim();
+      if (number) {
+        const record = visibleRecords.find((item) => item.number === number);
+        if (!record) throw Object.assign(new Error("Договор не найден в реестре."), { status: 404 });
+        sendJson(res, 200, record);
+        return;
+      }
+      sendJson(res, 200, visibleRecords.map((record) => ({ ...record, data: {} })));
       return;
     }
     if (req.method === "POST") {
@@ -460,7 +469,7 @@ const server = http.createServer(async (req, res) => {
   try {
     await ensureData();
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-    if (url.pathname.startsWith("/api/")) await handleApi(req, res, url.pathname);
+    if (url.pathname.startsWith("/api/")) await handleApi(req, res, url);
     else await handleStatic(req, res, url.pathname);
   } catch (error) {
     if (error.code === "ENOENT") {

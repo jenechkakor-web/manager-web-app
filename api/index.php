@@ -125,11 +125,11 @@ function initialize_database(PDO $pdo, array $config)
             FROM manager_contracts');
         $pdo->exec('ALTER TABLE manager_contracts ADD COLUMN registry_meta_json LONGTEXT NULL AFTER data_json');
     }
-    // One-time snapshot before the passive FTP production deals-registry rollout.
-    $registryBackupTable = 'manager_contracts_backup_20260702_pre_registry_ui';
-    if (!has_table($pdo, $registryBackupTable)) {
-        $pdo->exec('CREATE TABLE ' . $registryBackupTable . ' LIKE manager_contracts');
-        $pdo->exec('INSERT INTO ' . $registryBackupTable . '
+    // Preserve the live registry immediately before switching to lightweight list responses.
+    $registryReadFixBackupTable = 'manager_contracts_backup_20260804_registry_read_fix';
+    if (!has_table($pdo, $registryReadFixBackupTable)) {
+        $pdo->exec('CREATE TABLE ' . $registryReadFixBackupTable . ' LIKE manager_contracts');
+        $pdo->exec('INSERT INTO ' . $registryReadFixBackupTable . '
             (record_number, owner_id, contract_date, counterparty, amount, status, updated_at, data_json, registry_meta_json)
             SELECT record_number, owner_id, contract_date, counterparty, amount, status, updated_at, data_json, registry_meta_json
             FROM manager_contracts');
@@ -302,6 +302,39 @@ function normalize_presets($source)
     return $result;
 }
 
+function record_from_database_row(array $row, $includeData)
+{
+    $registryMeta = json_decode(isset($row['registry_meta_json']) ? (string) $row['registry_meta_json'] : '', true);
+    $needsDataForMeta = !is_array($registryMeta)
+        || !array_key_exists('prepayment', $registryMeta)
+        || $registryMeta['prepayment'] === null
+        || $registryMeta['prepayment'] === '';
+    $data = $includeData || $needsDataForMeta
+        ? json_decode((string) $row['data_json'], true)
+        : [];
+    $amount = (float) $row['amount'];
+    return [
+        'number' => (string) $row['record_number'],
+        'date' => (string) $row['contract_date'],
+        'counterparty' => (string) $row['counterparty'],
+        'amount' => $amount,
+        'status' => $row['status'] === 'exported' ? 'exported' : 'draft',
+        'updatedAt' => (string) $row['updated_at'],
+        'ownerLogin' => isset($row['owner_login']) ? (string) $row['owner_login'] : 'Удалённый пользователь',
+        'registryMeta' => normalize_registry_meta(['registryMeta' => is_array($registryMeta) ? $registryMeta : []], is_array($data) ? $data : [], $amount),
+        'data' => $includeData && is_array($data) ? $data : [],
+    ];
+}
+
+function prepare_contract_statement(PDO $pdo, $sql)
+{
+    $options = [];
+    if (defined('PDO::MYSQL_ATTR_USE_BUFFERED_QUERY')) {
+        $options[PDO::MYSQL_ATTR_USE_BUFFERED_QUERY] = false;
+    }
+    return $pdo->prepare($sql, $options);
+}
+
 function fetch_records(PDO $pdo, array $user)
 {
     $sql = 'SELECT contracts.*, users.login AS owner_login
@@ -313,24 +346,32 @@ function fetch_records(PDO $pdo, array $user)
         $params[':owner_id'] = $user['id'];
     }
     $sql .= ' ORDER BY contracts.updated_at DESC';
+    $statement = prepare_contract_statement($pdo, $sql);
+    $statement->execute($params);
+    $records = [];
+    while ($row = $statement->fetch()) {
+        $records[] = record_from_database_row($row, false);
+    }
+    $statement->closeCursor();
+    return $records;
+}
+
+function fetch_record(PDO $pdo, array $user, $number)
+{
+    $sql = 'SELECT contracts.*, users.login AS owner_login
+        FROM manager_contracts contracts
+        LEFT JOIN manager_users users ON users.id = contracts.owner_id
+        WHERE contracts.record_number = :number';
+    $params = [':number' => $number];
+    if ($user['role'] !== 'admin') {
+        $sql .= ' AND contracts.owner_id = :owner_id';
+        $params[':owner_id'] = $user['id'];
+    }
+    $sql .= ' LIMIT 1';
     $statement = $pdo->prepare($sql);
     $statement->execute($params);
-    return array_map(static function (array $row) {
-        $data = json_decode((string) $row['data_json'], true);
-        $registryMeta = json_decode(isset($row['registry_meta_json']) ? (string) $row['registry_meta_json'] : '', true);
-        $amount = (float) $row['amount'];
-        return [
-            'number' => (string) $row['record_number'],
-            'date' => (string) $row['contract_date'],
-            'counterparty' => (string) $row['counterparty'],
-            'amount' => $amount,
-            'status' => $row['status'] === 'exported' ? 'exported' : 'draft',
-            'updatedAt' => (string) $row['updated_at'],
-            'ownerLogin' => isset($row['owner_login']) ? (string) $row['owner_login'] : 'Удалённый пользователь',
-            'registryMeta' => normalize_registry_meta(['registryMeta' => is_array($registryMeta) ? $registryMeta : []], is_array($data) ? $data : [], $amount),
-            'data' => is_array($data) ? $data : [],
-        ];
-    }, $statement->fetchAll());
+    $row = $statement->fetch();
+    return $row ? record_from_database_row($row, true) : null;
 }
 
 function save_record(PDO $pdo, array $record, array $user)
@@ -586,7 +627,16 @@ try {
         respond(fetch_users($pdo));
     }
     if ($route === 'contracts-registry' && $method === 'GET') {
-        respond(fetch_records($pdo, require_user($pdo)));
+        $user = require_user($pdo);
+        $number = trim(isset($_GET['number']) ? (string) $_GET['number'] : '');
+        if ($number !== '') {
+            $record = fetch_record($pdo, $user, $number);
+            if (!$record) {
+                respond(['error' => 'Договор не найден в реестре.'], 404);
+            }
+            respond($record);
+        }
+        respond(fetch_records($pdo, $user));
     }
     if ($route === 'contracts-registry' && $method === 'POST') {
         require_same_origin();
@@ -693,7 +743,7 @@ try {
         respond($presets);
     }
     respond(['error' => 'Метод или адрес API не найден.'], 404);
-} catch (Exception $error) {
+} catch (Throwable $error) {
     error_log($error->getMessage());
     respond(['error' => 'Серверная часть приложения еще не настроена.'], 503);
 }

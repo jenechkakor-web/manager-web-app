@@ -115,8 +115,8 @@
     return normalizeRecords(records).filter((record) => record.number.toLowerCase() !== key);
   }
 
-  async function serverRequest(options = {}) {
-    const response = await fetch(SERVER_REGISTRY_URL, { cache: "no-store", ...options });
+  async function serverRequest(options = {}, query = "") {
+    const response = await fetch(`${SERVER_REGISTRY_URL}${query}`, { cache: "no-store", ...options });
     const result = await response.json().catch(() => ({}));
     if (response.status === 401) {
       window.location.replace("login.html");
@@ -130,6 +130,20 @@
     await window.ManagerAuth?.ready;
     if (!window.ManagerAuth?.usesServerAuth) return getLocalRecords();
     return normalizeRecords(await serverRequest());
+  }
+
+  async function loadRecord(number) {
+    await window.ManagerAuth?.ready;
+    const key = normalizeContractNumber(number).toLowerCase();
+    if (!key) throw new Error("Для загрузки нужен номер договора.");
+    if (!window.ManagerAuth?.usesServerAuth) {
+      const record = getLocalRecords().find((item) => item.number.toLowerCase() === key);
+      if (!record) throw new Error("Договор не найден в реестре.");
+      return record;
+    }
+    const record = normalizeRecord(await serverRequest({}, `?number=${encodeURIComponent(number)}`));
+    if (!record) throw new Error("Договор не найден в реестре.");
+    return record;
   }
 
   async function upsertRecord(record) {
@@ -226,6 +240,7 @@
     getLocalRecords,
     setLocalRecords,
     loadRegistry,
+    loadRecord,
     upsertRecord,
     deleteRecord,
     updateRegistryMeta,
