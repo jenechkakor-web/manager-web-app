@@ -1,0 +1,22 @@
+name: Read-only payout runtime diagnostic
+on:
+  push:
+    branches: ["codex/payouts-release"]
+    paths: ["api/payouts-diagnostic.php", ".github/workflows/payout-runtime-check.yml"]
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install admin-only read-only runtime check
+        env:
+          FTP_SERVER: ${{ secrets.BEGET_FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.BEGET_FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.BEGET_FTP_PASSWORD }}
+        run: |
+          curl --fail --show-error --silent --ftp-ssl-control \
+            --user "$FTP_USERNAME:$FTP_PASSWORD" --connect-timeout 15 --max-time 90 \
+            --upload-file api/payouts-diagnostic.php "ftp://$FTP_SERVER/api/payouts-diagnostic.php"
