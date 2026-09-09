@@ -9,7 +9,7 @@
 #report[hidden], .payout-entry-form [hidden], .payout-filters .hidden { display:none; }
 .payout-section-title { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .payout-section-title span, .payout-note { color:var(--muted); font-size:12px; line-height:1.6; }
-.payout-cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.payout-cards { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; }
 .payout-card { border:1px solid var(--line); background:#f7fafa; padding:12px; display:grid; gap:10px; border-radius:3px; }
 .payout-card span { color:var(--muted); font-size:12px; }
 .payout-card strong { font-size:21px; font-variant-numeric:tabular-nums; }

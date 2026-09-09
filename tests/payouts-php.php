@@ -38,6 +38,14 @@ foreach ([['from'=>'2026-02-30'],['from'=>'2026-09-09','to'=>'2026-08-01'],['mon
     try { payout_build_report([], $users, [], $admin, $query); throw new RuntimeException('Invalid filter accepted'); }
     catch (InvalidArgumentException $expected) {}
 }
+$planned = $record; $planned['number'] = 'PLAN'; $planned['registryMeta']['paymentStatus'] = 'Планируется';
+$active = $record; $active['number'] = 'ACTIVE'; $active['registryMeta']['paymentStatus'] = 'Предоплата'; $active['registryMeta']['prepayment'] = 100;
+$rows = [$record, $planned, $active, $other];
+$report = payout_build_report($rows, $users, [], $manager, ['month'=>'2026-06','manager'=>'3']);
+check($report['totals']['revenue'] == 20000 && $report['totals']['planned'] == 10000, 'Planned excluded from revenue even with template prepayment');
+check($report['managerTotals'][0]['planned'] == 10000 && $report['allTime']['accrued'] == 1200, 'Manager totals and unchanged bonuses');
+check(payout_build_report($rows, $users, [], $admin, ['manager'=>'3'])['totals']['planned'] == 0, 'Planned manager filter');
+check(payout_build_report($rows, $users, [], $manager, ['from'=>'2026-07-01'])['totals']['planned'] == 0, 'Planned date filter');
 echo "PHP payout calculations passed\n";
 
 if (!getenv('PAYOUT_TEST_MYSQL')) exit;

@@ -60,8 +60,10 @@ function buildReport(records, users, ledger, user, query) {
   const entries = visibleRecords.flatMap(record => {
     const common = { managerId: record.ownerId, manager: names.get(record.ownerId) || 'Удалённый пользователь',
       number: record.number, title: record.registryMeta.title || record.counterparty || 'Без названия' };
+    const planned = !['Да', 'Предоплата'].includes(record.registryMeta.paymentStatus);
     const sale = { ...common, id: `sale:${record.number}`, kind: 'sale', date: record.date,
-      reason: 'Сумма сделки', revenue: cents(record.amount), accrued: 0, paid: 0 };
+      reason: 'Сумма сделки', revenue: planned ? 0 : cents(record.amount),
+      planned: planned ? cents(record.amount) : 0, accrued: 0, paid: 0 };
     if (!isEligible(record)) return [sale];
     const accruedDate = record.bonusQualifiedAt
       ? new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Moscow' }).format(new Date(record.bonusQualifiedAt)) : '';
@@ -85,11 +87,12 @@ function buildReport(records, users, ledger, user, query) {
   })));
   const sum = rows => rows.reduce((total, entry) => {
     total.revenue += entry.revenue;
+    total.planned += entry.planned || 0;
     total.accrued += entry.accrued;
     total.paid += entry.paid;
     return total;
-  }, { revenue: 0, accrued: 0, paid: 0 });
-  const serialize = total => ({ revenue: rubles(total.revenue), accrued: rubles(total.accrued),
+  }, { revenue: 0, planned: 0, accrued: 0, paid: 0 });
+  const serialize = total => ({ revenue: rubles(total.revenue), planned: rubles(total.planned), accrued: rubles(total.accrued),
     paid: rubles(total.paid), balance: rubles(total.accrued - total.paid) });
   const selected = entries.filter(entry => (!(from || to) || entry.date) && (!from || entry.date >= from) && (!to || entry.date <= to));
   const opening = from ? sum(entries.filter(entry => entry.date && entry.date < from)) : sum([]);
@@ -106,7 +109,7 @@ function buildReport(records, users, ledger, user, query) {
       ...serialize(sum(selected.filter(entry => entry.managerId === id))),
       allTimeBalance: serialize(sum(entries.filter(entry => entry.managerId === id))).balance })),
     entries: selected.sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id)).map(entry => ({
-      ...entry, revenue: rubles(entry.revenue), accrued: rubles(entry.accrued), paid: rubles(entry.paid),
+      ...entry, revenue: rubles(entry.revenue), planned: rubles(entry.planned || 0), accrued: rubles(entry.accrued), paid: rubles(entry.paid),
     })),
   };
 }

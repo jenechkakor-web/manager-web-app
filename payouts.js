@@ -18,7 +18,8 @@
     $('periodTitle').textContent = data.from || data.to ? `Период: ${data.from ? date(data.from) : 'с начала'} — ${data.to ? date(data.to) : 'по сегодня'}` : 'За весь период';
     $('entryCount').textContent = `Сделок с бонусом: ${visibleEntries.filter(entry => entry.kind === 'deal').length} · Операций: ${visibleEntries.filter(entry => entry.kind !== 'deal').length}`;
     const cards = [
-      ['Выручка за период',data.totals.revenue,'','Сумма всех сделок по дате договора'],
+      ['Выручка за период',data.totals.revenue,'','Сделки в работе и завершённые по дате договора'],
+      ['Планируемые за период',data.totals.planned,'','Сумма планируемых сделок по дате договора'],
       ['Начислено за период',data.totals.accrued,'accrued','По сделкам и дополнительные бонусы'],
       ['Выплачено за период',data.totals.paid,'paid','По дате выплаты'],
       ['Осталось к выплате · всё время',data.allTime.balance,'balance',data.allTime.balance < 0 ? 'Отрицательный остаток — выплачено авансом' : 'Все начисления минус все выплаты'],
@@ -27,7 +28,7 @@
     $('balances').innerHTML = `<span>Остаток на начало периода: <b>${money(data.openingBalance)}</b></span><span>Начислено − выплачено за период: <b>${money(data.totals.balance)}</b></span><span>Остаток на конец периода: <b>${money(data.closingBalance)}</b></span>`;
     $('undatedNote').hidden = data.undatedAccrued === 0;
     $('undatedNote').textContent = `Бонусы старых сделок на ${money(data.undatedAccrued)} не имеют даты выполнения условий. Они включены в остаток за всё время, но не распределены по месяцам и не входят в остатки выбранного периода.`;
-    $('managerRows').innerHTML = admin ? data.managerTotals.map(row => `<tr><td>${escape(row.login)}</td><td class="amount">${money(row.revenue)}</td><td class="amount credit">${money(row.accrued)}</td><td class="amount debit">${money(row.paid)}</td><td class="amount">${money(row.allTimeBalance)}</td></tr>`).join('') : '';
+    $('managerRows').innerHTML = admin ? data.managerTotals.map(row => `<tr><td>${escape(row.login)}</td><td class="amount">${money(row.revenue)}</td><td class="amount">${money(row.planned)}</td><td class="amount credit">${money(row.accrued)}</td><td class="amount debit">${money(row.paid)}</td><td class="amount">${money(row.allTimeBalance)}</td></tr>`).join('') : '';
     operationsTable ||= window.createPayoutTable($('operationsTable'), window.ManagerAuth);
     operationsTable.render(visibleEntries);
     const selected = $('managerFilter').value;

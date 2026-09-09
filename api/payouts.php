@@ -146,13 +146,13 @@ function payout_append(PDO $pdo, array $body, array $admin)
 
 function payout_sum(array $entries)
 {
-    $result = ['revenue' => 0, 'accrued' => 0, 'paid' => 0];
-    foreach ($entries as $entry) foreach ($result as $key => $value) $result[$key] += $entry[$key];
+    $result = ['revenue' => 0, 'planned' => 0, 'accrued' => 0, 'paid' => 0];
+    foreach ($entries as $entry) foreach ($result as $key => $value) $result[$key] += payout_value($entry, $key, 0);
     return $result;
 }
 function payout_serialize(array $total)
 {
-    return ['revenue' => $total['revenue'] / 100, 'accrued' => $total['accrued'] / 100,
+    return ['revenue' => $total['revenue'] / 100, 'planned' => $total['planned'] / 100, 'accrued' => $total['accrued'] / 100,
         'paid' => $total['paid'] / 100, 'balance' => ($total['accrued'] - $total['paid']) / 100];
 }
 function payout_build_report(array $records, array $users, array $ledger, array $user, array $query)
@@ -173,8 +173,10 @@ function payout_build_report(array $records, array $users, array $ledger, array 
         if (!$inScope($record['ownerId'])) continue;
         $common = ['managerId' => $record['ownerId'], 'manager' => payout_value($names, $record['ownerId'], 'Удалённый пользователь'),
             'number' => $record['number'], 'title' => $record['registryMeta']['title'] ?: ($record['counterparty'] ?: 'Без названия')];
+        $planned = !in_array($record['registryMeta']['paymentStatus'], ['Да', 'Предоплата'], true);
         $entries[] = array_merge($common, ['id' => 'sale:' . $record['number'], 'kind' => 'sale', 'date' => $record['date'],
-            'reason' => 'Сумма сделки', 'revenue' => payout_cents($record['amount']), 'accrued' => 0, 'paid' => 0]);
+            'reason' => 'Сумма сделки', 'revenue' => $planned ? 0 : payout_cents($record['amount']),
+            'planned' => $planned ? payout_cents($record['amount']) : 0, 'accrued' => 0, 'paid' => 0]);
         if (!payout_eligible($record)) continue;
         $date = empty($record['bonusQualifiedAt']) ? '' : (new DateTimeImmutable($record['bonusQualifiedAt']))->setTimezone(new DateTimeZone('Europe/Moscow'))->format('Y-m-d');
         $entries[] = array_merge($common, ['id' => 'deal:' . $record['number'], 'kind' => 'deal', 'date' => $date,
@@ -215,7 +217,7 @@ function payout_build_report(array $records, array $users, array $ledger, array 
         'openingBalance' => ($opening['accrued'] - $opening['paid']) / 100,
         'closingBalance' => ($opening['accrued'] - $opening['paid'] + $period['accrued'] - $period['paid']) / 100,
         'managerTotals' => $managerTotals,
-        'entries' => array_map(static function ($entry) { foreach (['revenue', 'accrued', 'paid'] as $key) $entry[$key] /= 100; return $entry; }, $selected)];
+        'entries' => array_map(static function ($entry) { foreach (['revenue', 'planned', 'accrued', 'paid'] as $key) $entry[$key] = payout_value($entry, $key, 0) / 100; return $entry; }, $selected)];
 }
 
 function payout_report(PDO $pdo, array $user, array $query)

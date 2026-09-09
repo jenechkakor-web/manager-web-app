@@ -46,6 +46,20 @@ test('фильтры, даты начисления, перенос остатк
   assert.throws(()=>buildReport(rows,users,ledger,admin,new URLSearchParams('from=2026-09-09&to=2026-08-01')));
 });
 
+test('планируемые отдельно от выручки, с датами и владельцами', () => {
+  const planned = record({number:'PLAN',registryMeta:{...record().registryMeta,paymentStatus:'Планируется'}});
+  const active = record({number:'ACTIVE',registryMeta:{...record().registryMeta,paymentStatus:'Предоплата',prepayment:100}});
+  const rows = [record(),planned,active,record({number:'OTHER',ownerId:3})];
+  const report = buildReport(rows,users,[],manager,new URLSearchParams('month=2026-06&manager=3'));
+  assert.equal(report.totals.revenue,20000);
+  assert.equal(report.totals.planned,10000);
+  assert.equal(report.managerTotals[0].planned,10000);
+  assert.equal(report.entries.find(e=>e.id==='sale:PLAN').planned,10000);
+  assert.equal(report.allTime.accrued,1200);
+  assert.equal(buildReport(rows,users,[],admin,new URLSearchParams('manager=3')).totals.planned,0);
+  assert.equal(buildReport(rows,users,[],manager,new URLSearchParams('from=2026-07-01')).totals.planned,0);
+});
+
 test('дата условий сохраняется и меняется только при новом выполнении условий', () => {
   const pending = record({registryMeta:{...record().registryMeta,closingDocs:'Не отправлены'}});
   const qualified = stampQualification(record(),pending);
