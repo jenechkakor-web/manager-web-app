@@ -3,6 +3,7 @@
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
+require_once __DIR__ . '/payouts.php';
 
 function respond($payload, $status = 200)
 {
@@ -147,6 +148,7 @@ function initialize_database(PDO $pdo, array $config)
         UNIQUE KEY unique_title (title)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+    initialize_payout_database($pdo);
     return $adminId;
 }
 
@@ -376,9 +378,11 @@ function fetch_record(PDO $pdo, array $user, $number)
 
 function save_record(PDO $pdo, array $record, array $user)
 {
-    $ownerStatement = $pdo->prepare('SELECT owner_id FROM manager_contracts WHERE record_number = :number LIMIT 1');
+    $ownerStatement = $pdo->prepare('SELECT * FROM manager_contracts WHERE record_number = :number LIMIT 1 FOR UPDATE');
     $ownerStatement->execute([':number' => $record['number']]);
-    $existingOwner = $ownerStatement->fetchColumn();
+    $existingRow = $ownerStatement->fetch();
+    $existingOwner = $existingRow ? $existingRow['owner_id'] : false;
+    $previous = $existingRow ? record_from_database_row($existingRow, false) : null;
     if ($existingOwner !== false && $user['role'] !== 'admin' && (int) $existingOwner !== $user['id']) {
         respond(['error' => 'Нельзя изменить договор другого пользователя.'], 403);
     }
@@ -401,6 +405,7 @@ function save_record(PDO $pdo, array $record, array $user)
         ':data_json' => json_encode($record['data'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         ':registry_meta_json' => json_encode($record['registryMeta'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
     ]);
+    payout_stamp_record($pdo, $record, $previous);
 }
 
 function fetch_presets(PDO $pdo)
@@ -464,6 +469,9 @@ function validate_login($login)
     return preg_match('/^[A-Za-z0-9._-]{3,64}$/', $login) === 1;
 }
 
+// CLI-only entry for isolated tests; never changes HTTP authentication.
+if (PHP_SAPI === 'cli' && defined('MANAGER_API_TEST_MODE')) return;
+
 try {
     $config = require __DIR__ . '/config.php';
     $secureCookie = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
@@ -477,7 +485,7 @@ try {
     $method = strtoupper(isset($_SERVER['REQUEST_METHOD']) ? (string) $_SERVER['REQUEST_METHOD'] : 'GET');
 
     if ($route === 'health' && $method === 'GET') {
-        respond(['ok' => true, 'database' => true]);
+        respond(['ok' => true, 'database' => true, 'payouts' => true]);
     }
     if ($route === 'auth/login' && $method === 'POST') {
         require_same_origin();
@@ -626,6 +634,19 @@ try {
         $statement->execute([':id' => $userId]);
         respond(fetch_users($pdo));
     }
+    if ($route === 'payouts') {
+        $user = require_user($pdo);
+        if ($method === 'GET') {
+            try { respond(payout_report($pdo, $user, $_GET)); }
+            catch (InvalidArgumentException $error) { respond(['error' => $error->getMessage()], 400); }
+        }
+        if ($method === 'POST') {
+            require_same_origin();
+            $admin = require_admin($pdo);
+            respond(['entry' => payout_append($pdo, request_json(), $admin)]);
+        }
+        respond(['error' => 'Метод не поддерживается.'], 405);
+    }
     if ($route === 'contracts-registry' && $method === 'GET') {
         $user = require_user($pdo);
         $number = trim(isset($_GET['number']) ? (string) $_GET['number'] : '');
@@ -644,8 +665,9 @@ try {
         $body = request_json();
         if ((isset($body['action']) ? $body['action'] : '') === 'update-meta') {
             $number = trim(isset($body['number']) ? (string) $body['number'] : '');
+            $pdo->beginTransaction();
             $statement = $pdo->prepare('SELECT owner_id, amount, data_json, registry_meta_json
-                FROM manager_contracts WHERE record_number = :number LIMIT 1');
+                FROM manager_contracts WHERE record_number = :number LIMIT 1 FOR UPDATE');
             $statement->execute([':number' => $number]);
             $row = $statement->fetch();
             if (!$row) {
@@ -656,6 +678,8 @@ try {
             }
             $data = json_decode((string) $row['data_json'], true);
             $currentMeta = json_decode(isset($row['registry_meta_json']) ? (string) $row['registry_meta_json'] : '', true);
+            $previous = ['amount' => (float) $row['amount'], 'registryMeta' => normalize_registry_meta(
+                ['registryMeta' => is_array($currentMeta) ? $currentMeta : []], is_array($data) ? $data : [], (float) $row['amount'])];
             $fields = isset($body['fields']) && is_array($body['fields']) ? $body['fields'] : [];
             $mergedFields = array_merge(is_array($currentMeta) ? $currentMeta : [], $fields);
             if (array_key_exists('prepayment', $fields)) {
@@ -675,6 +699,8 @@ try {
                 ':updated_at' => $updatedAt,
                 ':number' => $number,
             ]);
+            payout_stamp_record($pdo, ['number' => $number, 'amount' => (float) $row['amount'], 'registryMeta' => $registryMeta], $previous);
+            $pdo->commit();
             $updatedRecord = null;
             foreach (fetch_records($pdo, $user) as $candidate) {
                 if ($candidate['number'] === $number) {
@@ -701,8 +727,9 @@ try {
         if (!$record) {
             respond(['error' => 'Для записи нужен номер договора или черновика.'], 400);
         }
+        $pdo->beginTransaction();
         if (!isset($body['preserveRegistryMeta']) || $body['preserveRegistryMeta'] !== false) {
-            $statement = $pdo->prepare('SELECT registry_meta_json FROM manager_contracts WHERE record_number = :number LIMIT 1');
+            $statement = $pdo->prepare('SELECT registry_meta_json FROM manager_contracts WHERE record_number = :number LIMIT 1 FOR UPDATE');
             $statement->execute([':number' => $record['number']]);
             $existingMeta = json_decode((string) $statement->fetchColumn(), true);
             if (is_array($existingMeta)) {
@@ -718,6 +745,7 @@ try {
         }
         assert_paid_status_has_no_remainder($record['registryMeta'], $record['amount']);
         save_record($pdo, $record, $user);
+        $pdo->commit();
         respond(['saved' => true]);
     }
     if ($route === 'tech-presets' && $method === 'GET') {

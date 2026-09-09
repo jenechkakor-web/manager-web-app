@@ -17,13 +17,24 @@
     const sidebar = workspace?.querySelector(".sidebar");
     if (!workspace || !sidebar || sidebar.querySelector("[data-sidebar-toggle]")) return;
 
+    const nav = sidebar.querySelector('.nav-list');
+    if (nav && !nav.querySelector('a[href="payouts.html"]')) {
+      const link = document.createElement('a');
+      link.href = 'payouts.html';
+      link.className = 'nav-item';
+      link.textContent = 'Реестр выплат';
+      nav.append(link);
+    }
+
     sidebar.querySelectorAll(".nav-item").forEach((item, index) => {
       const label = item.textContent.trim();
       item.title = label;
       item.textContent = "";
       const icon = document.createElement("span");
       icon.className = "nav-icon";
-      icon.innerHTML = NAV_ICONS[index] || NAV_ICONS[1];
+      icon.innerHTML = item.getAttribute('href') === 'payouts.html'
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M7 15h4M16 13v4M14 15h4"/></svg>'
+        : NAV_ICONS[index] || NAV_ICONS[1];
       const labelElement = document.createElement("span");
       labelElement.className = "nav-label";
       labelElement.textContent = label;

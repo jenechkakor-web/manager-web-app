@@ -1,0 +1,75 @@
+<!doctype html>
+<html class="auth-pending" lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Реестр выплат</title>
+  <link rel="stylesheet" href="styles.css?v=20260909-payouts" />
+  <link rel="stylesheet" href="payouts.css?v=20260909-payouts" />
+</head>
+<body class="payouts-page">
+<main class="app-shell"><section class="workspace">
+  <aside class="sidebar" aria-label="Разделы приложения">
+    <div class="brand"><span class="brand-mark">Д</span><div><strong>Сделки</strong><small>рабочее пространство</small></div></div>
+    <nav class="nav-list">
+      <a class="nav-item" href="index.html">Создать Договор и Счет</a>
+      <a class="nav-item" href="registry.html">Реестр сделок</a>
+      <a class="nav-item hidden" href="dashboard.html" data-admin-only>Дашборд</a>
+      <a class="nav-item hidden" href="library.html" data-admin-only>Справочник</a>
+      <a class="nav-item hidden" href="users.html" data-admin-only>Пользователи</a>
+      <a class="nav-item active" href="payouts.html">Реестр выплат</a>
+    </nav>
+    <div class="sidebar-session"><div><strong data-auth-login></strong><small data-auth-role></small></div><button class="button ghost" type="button" data-logout>Выйти</button></div>
+  </aside>
+  <section class="content">
+    <header class="topbar">
+      <div><p class="eyebrow">Взаиморасчёты</p><h1>Реестр выплат</h1><p>Выручка, начисления и выплаты бонусов</p></div>
+      <div class="top-actions">
+        <button class="button ghost" id="refresh" type="button">Обновить</button>
+        <button class="button ghost hidden" id="addAccrual" type="button" data-admin-only>Начислить бонус</button>
+        <button class="button primary hidden" id="addPayment" type="button" data-admin-only>Добавить выплату</button>
+      </div>
+    </header>
+    <div class="payout-content">
+      <form id="filters" class="payout-filters">
+        <label>Месяц<input id="month" type="month" aria-label="Месяц" /></label>
+        <label>Дата с<input id="dateFrom" type="date" /></label>
+        <label>Дата по<input id="dateTo" type="date" /></label>
+        <label class="hidden" data-admin-only>Менеджер<select id="managerFilter"><option value="">Все менеджеры</option></select></label>
+        <button class="button primary" type="submit">Применить</button>
+        <button class="button ghost" id="resetFilters" type="button">Весь период</button>
+      </form>
+      <p id="status" class="status-line" role="status" aria-live="polite">Загружаю реестр…</p>
+      <div id="report" hidden>
+        <div class="payout-section-title"><h2 id="periodTitle">За весь период</h2><span id="entryCount"></span></div>
+        <section id="cards" class="payout-cards" aria-label="Свод по выплатам"></section>
+        <div id="balances" class="payout-balances"></div>
+        <p class="payout-note">Выручка — сумма сделок по дате договора. Бонусы по сделкам учитываются по дате полной оплаты и отправки закрывашек; статус «Не нужно» не даёт начисления. Размер бонуса берётся из реестра сделок. При изменении условий сделки автоматическое начисление пересчитывается.</p>
+        <p id="undatedNote" class="payout-notice" hidden></p>
+        <section id="managerSummary" class="hidden" data-admin-only>
+          <h2>По менеджерам</h2>
+          <div class="payout-table-wrap"><table class="payout-table"><thead><tr><th>Менеджер</th><th>Выручка за период</th><th>Начислено за период</th><th>Выплачено за период</th><th>Остаток за всё время</th></tr></thead><tbody id="managerRows"></tbody></table></div>
+        </section>
+        <section><div class="payout-section-title"><h2>Сделки и операции</h2><span>Закрытые сделки с бонусом, ручные начисления и выплаты</span></div>
+          <div class="payout-table-wrap"><table id="operationsTable" class="payout-table payout-interactive-table"><colgroup></colgroup><thead></thead><tbody id="entryRows"></tbody></table></div>
+        </section>
+      </div>
+    </div>
+  </section>
+</section></main>
+<dialog id="entryDialog" aria-labelledby="dialogTitle">
+  <form id="entryForm" class="payout-entry-form">
+    <div class="payout-section-title"><h2 id="dialogTitle">Добавить выплату</h2><button type="button" class="button ghost" id="closeDialog" aria-label="Закрыть">×</button></div>
+    <label>Менеджер<select id="entryManager" required></select></label>
+    <label>Сумма, ₽<input id="entryAmount" type="number" min="0.01" max="9999999999.99" step="0.01" required inputmode="decimal" /></label>
+    <label id="reasonLabel">Причина<select id="entryReason"></select></label>
+    <p class="payout-note" id="operationDate"></p>
+    <p id="paymentHint" class="payout-note"></p>
+    <p id="formError" role="alert"></p>
+    <div class="modal-actions"><button class="button ghost" id="cancelEntry" type="button">Отмена</button><button class="button primary" id="saveEntry" type="submit">Сохранить</button></div>
+  </form>
+</dialog>
+<script src="auth.js?v=20260909-payouts"></script>
+<script src="payouts-table.js?v=20260909-columns"></script>
+<script src="payouts.js?v=20260909-payouts"></script>
+</body></html>

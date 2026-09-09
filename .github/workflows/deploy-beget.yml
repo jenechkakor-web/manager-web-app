@@ -24,12 +24,15 @@ permissions:
 
 concurrency:
   group: deploy-beget-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  validate:
+    uses: ./.github/workflows/validate-payouts.yml
   deploy:
+    needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       FTP_SERVER: ${{ secrets.BEGET_FTP_SERVER }}
       FTP_USERNAME: ${{ secrets.BEGET_FTP_USERNAME }}
@@ -48,18 +51,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p deploy-api deploy-public
-          cp api/.htaccess api/config.php api/config.local.example.php api/dadata-client.php api/dadata.local.example.php api/index.php deploy-api/
+          cp api/.htaccess api/config.php api/config.local.example.php api/dadata-client.php api/dadata.local.example.php api/index.php api/payouts.php deploy-api/
           printf "<?php\n\nreturn ['dadata_token' => '%s'];\n" "$DADATA_API_TOKEN" > deploy-api/dadata.local.php
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             upload_api=true
             files=(
               .htaccess
-              index.html login.html registry.html dashboard.html library.html users.html
-              app.js auth.js login.js registry-storage-sync.js registry.js dashboard.js library.js users.js styles.css
+              index.html login.html registry.html dashboard.html library.html users.html payouts.html
+              app.js auth.js login.js registry-storage-sync.js registry.js dashboard.js library.js users.js styles.css payouts.js payouts-table.js payouts.css
               dogovor_final.docx invoice_template.docx
               schet_dogovor_template.docx schet_dogovor_zamery_template.docx
-              templates/tech-presets.json templates/contracts-registry.json
+              templates/tech-presets.json
             )
             while IFS= read -r asset; do
               files+=("$asset")
@@ -92,6 +95,10 @@ jobs:
               "library.js"
               "users.js"
               "styles.css"
+              "payouts.html"
+              "payouts.js"
+              "payouts-table.js"
+              "payouts.css"
               "assets/ip-signature.png"
               "assets/ip-stamp.png"
               "assets/ooo-signature.png"
@@ -102,10 +109,10 @@ jobs:
           upload_public=false
           for file in "${files[@]}"; do
             case "$file" in
-              server.js)
+              server.js|tests/*|.data/*|templates/contracts-registry.json)
                 continue
                 ;;
-              .htaccess|*.html|*.js|*.css|*.docx|assets/*|templates/tech-presets.json|templates/contracts-registry.json)
+              .htaccess|*.html|*.js|*.css|*.docx|assets/*|templates/tech-presets.json)
                 if [[ -f "$file" ]]; then
                   if [[ "$file" == "assets/ip-signature.png" ]]; then
                     continue
@@ -138,6 +145,7 @@ jobs:
           sudo apt-get install --yes lftp
 
       - name: Back up current production files
+        id: backup
         shell: bash
         run: |
           set -euo pipefail
@@ -160,6 +168,10 @@ jobs:
           set cmd:fail-exit false
           get /dashboard.html -o backup-live/dashboard.html
           get /dashboard.js -o backup-live/dashboard.js
+          get /payouts.html -o backup-live/payouts.html
+          get /payouts.js -o backup-live/payouts.js
+          get /payouts-table.js -o backup-live/payouts-table.js
+          get /payouts.css -o backup-live/payouts.css
           set cmd:fail-exit true
           get /library.html -o backup-live/library.html
           get /users.html -o backup-live/users.html
@@ -167,10 +179,8 @@ jobs:
           get /auth.js -o backup-live/auth.js
           get /login.js -o backup-live/login.js
           get /registry-storage-sync.js -o backup-live/registry-storage-sync.js
-          set cmd:fail-exit false
           get /registry.js -o backup-live/registry.js
           get /styles.css -o backup-live/styles.css
-          set cmd:fail-exit true
           get /library.js -o backup-live/library.js
           get /users.js -o backup-live/users.js
           get /dogovor_final.docx -o backup-live/dogovor_final.docx
@@ -190,11 +200,8 @@ jobs:
             sleep 10
           done
           if [[ "$backup_complete" != true ]]; then
-            echo "::warning::Production is currently incomplete; preserving the partial emergency snapshot and continuing with recovery."
-            printf '%s\n' \
-              'The live file set was already incomplete before this run.' \
-              'Complete pre-deployment backups are stored in earlier workflow artifacts.' \
-              > backup-live/EMERGENCY-PARTIAL-BACKUP.txt
+            echo "::error::Complete production backup failed. Deployment is stopped; live files have not been changed."
+            exit 1
           fi
           find backup-live -type f -print0 | sort -z | xargs -0 sha256sum > backup-live/SHA256SUMS.txt
 
@@ -204,9 +211,11 @@ jobs:
           name: manager-live-before-${{ github.run_id }}
           path: backup-live/
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30
 
       - name: Restore critical registry files first
+        id: deploy_start
         if: steps.prepare.outputs.upload_public == 'true'
         shell: bash
         run: |
@@ -239,7 +248,13 @@ jobs:
               --upload-file "$source" "ftp://$FTP_SERVER/$destination"
           }
 
-          upload_core_file deploy-api/index.php /api/index.php
+          upload_core_file deploy-api/payouts.php /api/payouts.php
+          # Upload the entry point to a temporary name and rename only after transfer completes.
+          upload_core_file deploy-api/index.php /api/index.next.php
+          curl --fail --show-error --silent --ftp-ssl-control \
+            --user "$FTP_USERNAME:$FTP_PASSWORD" --connect-timeout 15 --max-time 60 \
+            --quote "RNFR /api/index.next.php" --quote "RNTO /api/index.php" \
+            "ftp://$FTP_SERVER/" --output /dev/null
           upload_core_file deploy-api/.htaccess /api/.htaccess
           upload_core_file deploy-api/config.php /api/config.php
           upload_core_file deploy-api/config.local.example.php /api/config.local.example.php
@@ -250,14 +265,14 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
-            response="$(curl --fail --silent --show-error --max-time 20 https://manager.verkup.ru/api/health || true)"
+            response="$(curl --fail --silent --show-error --max-time 120 https://manager.verkup.ru/api/health || true)"
             if grep -q '"database":true' <<<"$response"; then
               echo "API health check passed."
               exit 0
             fi
 
             echo "API health check failed on attempt $attempt; uploading API again."
-            for source in deploy-api/.htaccess deploy-api/index.php deploy-api/config.php; do
+            for source in deploy-api/.htaccess deploy-api/payouts.php deploy-api/config.php; do
               destination="api/$(basename "$source")"
               curl --fail --show-error --silent --ftp-ssl-control \
                 --user "$FTP_USERNAME:$FTP_PASSWORD" \
@@ -302,6 +317,17 @@ jobs:
               --retry 2 --retry-delay 5 --retry-all-errors \
               --upload-file "$source" "ftp://$FTP_SERVER/$destination"
           done < <(find deploy-public -type f -print0)
+
+      - name: Verify payouts public page and access protection
+        shell: bash
+        run: |
+          set -euo pipefail
+          for relative in payouts.html payouts.js payouts-table.js payouts.css auth.js; do
+            curl --fail --silent --show-error --max-time 30 "https://manager.verkup.ru/$relative" -o verify-download
+            cmp "deploy-public/$relative" verify-download
+          done
+          code="$(curl --silent --show-error --max-time 30 -o verify-response -w '%{http_code}' https://manager.verkup.ru/api/payouts)"
+          test "$code" = 401
 
       - name: Verify signature and stamp assets
         if: steps.prepare.outputs.upload_public == 'true'
@@ -361,3 +387,18 @@ jobs:
             assets/ooo-stamp.png; do
             verify_asset "$relative"
           done
+
+      - name: Restore previous application files if deployment failed
+        if: failure() && steps.backup.outcome == 'success' && steps.deploy_start.outcome != 'skipped' && steps.deploy_start.outcome != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Restore only application files, never SQL/JSON data or server credentials.
+          for relative in api/index.php api/.htaccess api/config.php .htaccess index.html login.html registry.html dashboard.html library.html users.html app.js auth.js login.js registry-storage-sync.js registry.js dashboard.js library.js users.js styles.css payouts.html payouts.js payouts-table.js payouts.css; do
+            if [[ -f "backup-live/$relative" ]]; then
+              curl --fail --show-error --silent --ftp-ssl-control \
+                --user "$FTP_USERNAME:$FTP_PASSWORD" --ftp-create-dirs --connect-timeout 15 --max-time 90 \
+                --retry 2 --retry-all-errors --upload-file "backup-live/$relative" "ftp://$FTP_SERVER/$relative"
+            fi
+          done
+          echo "Previous application files restored. Existing database records were not replaced."

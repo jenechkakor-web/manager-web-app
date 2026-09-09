@@ -1,0 +1,44 @@
+name: Validate payouts
+on:
+  workflow_call:
+  push:
+    branches: ["codex/payouts-release"]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: isolated-test-only
+          MYSQL_DATABASE: manager_payout_test
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pisolated-test-only"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: pdo_mysql
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax and local API tests
+        run: |
+          php -l api/index.php
+          php -l api/payouts.php
+          node --check payouts.js
+          node --check payouts-table.js
+          node --test tests/payouts.test.cjs
+      - name: PHP MySQL migration and API tests on disposable database
+        env:
+          PAYOUT_TEST_MYSQL: '1'
+        run: |
+          php tests/payouts-php.php
+          node tests/payouts-php-http.cjs

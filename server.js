@@ -2,9 +2,11 @@ const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const http = require("node:http");
 const path = require("node:path");
+const { createPayoutStore, buildReport, stampQualification } = require("./api/payouts-local.cjs");
 
 const rootDir = __dirname;
-const dataDir = path.join(rootDir, ".data");
+const dataDir = process.env.MANAGER_DATA_DIR ? path.resolve(process.env.MANAGER_DATA_DIR) : path.join(rootDir, ".data");
+const payoutStore = createPayoutStore(dataDir);
 const usersPath = path.join(dataDir, "users.json");
 const presetsPath = path.join(dataDir, "tech-presets.json");
 const registryPath = path.join(dataDir, "contracts-registry.json");
@@ -134,6 +136,7 @@ function normalizeRecord(entry, ownerId = null) {
     amount: Number.isFinite(amount) ? amount : 0,
     status: entry?.status === "exported" ? "exported" : "draft",
     updatedAt: String(entry?.updatedAt || new Date().toISOString()),
+    bonusQualifiedAt: typeof entry?.bonusQualifiedAt === "string" && Number.isFinite(Date.parse(entry.bonusQualifiedAt)) ? entry.bonusQualifiedAt : "",
     registryMeta: normalizeRegistryMeta(entry, data, Number.isFinite(amount) ? amount : 0),
     data,
   };
@@ -227,6 +230,25 @@ function recordsForUser(records, users, user) {
 
 async function handleApi(req, res, url) {
   const { pathname } = url;
+  if (pathname === "/api/payouts") {
+    const user = await requireUser(req);
+    const users = await readJson(usersPath);
+    if (req.method === "GET") {
+      const records = (await readJson(registryPath)).map(record => normalizeRecord(record)).filter(Boolean);
+      sendJson(res, 200, buildReport(records, users, await payoutStore.read(), user, url.searchParams));
+      return;
+    }
+    if (req.method === "POST") {
+      const admin = await requireAdmin(req);
+      const origin = req.headers.origin;
+      if (origin && new URL(origin).host !== req.headers.host) throw Object.assign(new Error("Запрещённый источник запроса."), { status: 403 });
+      const entry = await payoutStore.append(await readJsonBody(req), users, admin);
+      sendJson(res, 200, { saved: true, id: entry.id });
+      return;
+    }
+    sendJson(res, 405, { error: "Метод не поддерживается." });
+    return;
+  }
   if (req.method === "GET" && pathname === "/api/health") {
     sendJson(res, 200, { ok: true, database: true });
     return;
@@ -386,7 +408,9 @@ async function handleApi(req, res, url) {
           existing.amount,
         );
         assertPaidStatusHasNoRemainder(nextRegistryMeta, existing.amount);
+        const previousRecord = { ...existing };
         existing.registryMeta = nextRegistryMeta;
+        stampQualification(existing, previousRecord);
         existing.updatedAt = new Date().toISOString();
         await writeJson(registryPath, records);
         sendJson(res, 200, { record: existing });
@@ -416,6 +440,7 @@ async function handleApi(req, res, url) {
         };
       }
       assertPaidStatusHasNoRemainder(incoming.registryMeta, incoming.amount);
+      stampQualification(incoming, existing);
       records = [incoming, ...records.filter((record) => record.number !== incoming.number)];
       await writeJson(registryPath, records);
       sendJson(res, 200, { saved: true });
@@ -483,5 +508,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(port, "127.0.0.1", () => {
-  console.log(`Manager app: http://127.0.0.1:${port}`);
+  console.log(`Manager app: http://127.0.0.1:${server.address().port}`);
 });
