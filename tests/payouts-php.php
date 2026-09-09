@@ -49,7 +49,7 @@ $pdo->exec("CREATE TABLE manager_contracts (record_number VARCHAR(191) NOT NULL 
     contract_date VARCHAR(32) NOT NULL DEFAULT '', counterparty VARCHAR(255) NOT NULL DEFAULT '', amount DECIMAL(15,2) NOT NULL DEFAULT 0,
     status VARCHAR(20) NOT NULL DEFAULT 'draft', updated_at VARCHAR(40) NOT NULL, data_json LONGTEXT NOT NULL,
     registry_meta_json LONGTEXT NULL, KEY owner_id (owner_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-$pdo->prepare('INSERT INTO manager_contracts VALUES (?,?,?,?,?,?,?,?,?)')->execute(['EXISTING',1,'2026-06-15','Keep me',10000,'draft','2026-06-15T00:00:00Z','{"sentinel":"untouched"}',json_encode($record['registryMeta'])]);
+$pdo->prepare('INSERT INTO manager_contracts VALUES (?,?,?,?,?,?,?,?,?)')->execute(['EXISTING',1,'2026-06-15','Keep me',10000,'draft','2026-06-15T00:00:00Z','{"sentinel":"untouched","paymentTerms":100}',json_encode($record['registryMeta'])]);
 $before = $pdo->query('SELECT * FROM manager_contracts')->fetchAll();
 initialize_database($pdo, $config);
 $after = $pdo->query('SELECT * FROM manager_contracts')->fetchAll();
