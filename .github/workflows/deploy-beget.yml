@@ -388,6 +388,14 @@ jobs:
             verify_asset "$relative"
           done
 
+      - name: Remove temporary admin diagnostic files
+        shell: bash
+        run: |
+          curl --fail --show-error --silent --ftp-ssl-control \
+            --user "$FTP_USERNAME:$FTP_PASSWORD" --connect-timeout 15 --max-time 60 \
+            --quote "*DELE /api/payouts-diagnostic.php" --quote "*DELE /payouts-diagnostic.html" \
+            "ftp://$FTP_SERVER/" --output /dev/null
+
       - name: Restore previous application files if deployment failed
         if: failure() && steps.backup.outcome == 'success' && steps.deploy_start.outcome != 'skipped' && steps.deploy_start.outcome != ''
         shell: bash
