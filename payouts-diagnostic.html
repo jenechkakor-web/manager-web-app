@@ -1,0 +1,7 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Диагностика реестра выплат</title>
+<h1>Диагностика реестра выплат</h1><pre id="result">Проверка…</pre>
+<script>
+fetch('/api/payouts-diagnostic.php',{cache:'no-store'}).then(async response=>{
+  document.getElementById('result').textContent=JSON.stringify(await response.json(),null,2);
+}).catch(error=>{document.getElementById('result').textContent=error.message;});
+</script></html>

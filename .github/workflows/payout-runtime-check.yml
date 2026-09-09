@@ -2,7 +2,7 @@ name: Read-only payout runtime diagnostic
 on:
   push:
     branches: ["codex/payouts-release"]
-    paths: ["api/payouts-diagnostic.php", ".github/workflows/payout-runtime-check.yml"]
+    paths: ["api/payouts-diagnostic.php", "payouts-diagnostic.html", ".github/workflows/payout-runtime-check.yml"]
 permissions:
   contents: read
 jobs:
@@ -20,3 +20,6 @@ jobs:
           curl --fail --show-error --silent --ftp-ssl-control \
             --user "$FTP_USERNAME:$FTP_PASSWORD" --connect-timeout 15 --max-time 90 \
             --upload-file api/payouts-diagnostic.php "ftp://$FTP_SERVER/api/payouts-diagnostic.php"
+          curl --fail --show-error --silent --ftp-ssl-control \
+            --user "$FTP_USERNAME:$FTP_PASSWORD" --connect-timeout 15 --max-time 90 \
+            --upload-file payouts-diagnostic.html "ftp://$FTP_SERVER/payouts-diagnostic.html"
