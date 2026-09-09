@@ -37,6 +37,9 @@ const { chromium } = require(process.argv[2]);
       await page.locator('#report').waitFor({state:'visible'});
     }
     await login('admin');
+    assert.equal(await page.locator('#month').inputValue(),today.slice(0,7));
+    const [currentYear,currentMonth] = today.split('-');
+    assert.match(await page.locator('#periodTitle').innerText(),new RegExp(`\\.${currentMonth}\\.${currentYear}`));
     await page.getByRole('button',{name:'Начислить бонус',exact:true}).click();
     await page.locator('#entryManager').selectOption('2');
     await page.locator('#entryAmount').fill('500');

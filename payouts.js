@@ -3,6 +3,7 @@
   const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
   const money = value => new Intl.NumberFormat('ru-RU', { style:'currency', currency:'RUB' }).format(value);
   const date = value => value ? value.split('-').reverse().join('.') : 'Дата не зафиксирована';
+  const currentMonth = () => new Intl.DateTimeFormat('sv-SE', { timeZone:'Europe/Moscow' }).format(new Date()).slice(0, 7);
   let report, requestNumber = 0, operationKind, requestId, saving = false, operationsTable;
   let appliedQuery = '';
   async function api(query = '', options = {}) {
@@ -106,5 +107,9 @@
     } catch(error) { $('formError').textContent = error.message; }
     finally { saving = false; controls.forEach((control,index) => { control.disabled = disabled[index]; }); }
   });
-  window.ManagerAuth.ready.then(() => load());
+  window.ManagerAuth.ready.then(() => {
+    const month = currentMonth();
+    $('month').value = month;
+    return load(`?month=${encodeURIComponent(month)}`);
+  });
 })();
