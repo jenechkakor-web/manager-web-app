@@ -771,6 +771,9 @@ try {
         respond($presets);
     }
     respond(['error' => 'Метод или адрес API не найден.'], 404);
+} catch (Exception $error) {
+    error_log($error->getMessage());
+    respond(['error' => 'Серверная часть приложения еще не настроена.'], 503);
 } catch (Throwable $error) {
     error_log($error->getMessage());
     respond(['error' => 'Серверная часть приложения еще не настроена.'], 503);

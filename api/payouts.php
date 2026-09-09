@@ -3,6 +3,7 @@
 function payout_cents($value) { return (int) round((float) $value * 100); }
 function payout_today() { return (new DateTimeImmutable('now', new DateTimeZone('Europe/Moscow')))->format('Y-m-d'); }
 function payout_reasons() { return ['оклад', 'выполнение плана', 'отзывы', 'бонус от руководителя', 'другое']; }
+function payout_value(array $source, $key, $fallback = '') { return isset($source[$key]) ? $source[$key] : $fallback; }
 function payout_valid_date($value)
 {
     $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
@@ -21,7 +22,7 @@ function payout_bonus_cents(array $record)
     if ($meta['bonusType'] === 'оклад') return 0;
     if ($meta['bonusType'] === 'от прибыли') return payout_cents($meta['bonusAmount']);
     $rates = ['12%' => 12, '10%' => 10, '7%' => 7, '5%' => 5, '4%' => 4, '3%' => 3];
-    return (int) round(payout_cents($record['amount']) * ($rates[$meta['bonusType']] ?? 0) / 100);
+    return (int) round(payout_cents($record['amount']) * payout_value($rates, $meta['bonusType'], 0) / 100);
 }
 function payout_qualification_date(array $record, $previous, $previousDate)
 {
@@ -42,7 +43,7 @@ function initialize_payout_database(PDO $pdo)
         if ($pdo->query('SELECT COUNT(*) FROM manager_payout_migrations WHERE version = 1')->fetchColumn()) return;
         // Copy existing production data before adding the new payout tables.
         // Never import local JSON or rewrite existing contracts/users.
-        $suffix = '_paybak_' . gmdate('Ymd_His') . '_' . bin2hex(random_bytes(3));
+        $suffix = '_paybak_' . gmdate('Ymd_His') . '_' . substr(sha1(uniqid('', true)), 0, 8);
         $manifest = [];
         foreach (['manager_contracts', 'manager_users', 'manager_tech_presets', 'manager_bonus_ledger', 'manager_bonus_qualification'] as $table) {
             if (!has_table($pdo, $table)) continue;
@@ -75,6 +76,9 @@ function initialize_payout_database(PDO $pdo)
         $statement = $pdo->prepare('INSERT INTO manager_payout_migrations (version, completed_at, backup_manifest) VALUES (1, ?, ?)');
         $statement->execute([gmdate('c'), json_encode($manifest)]);
         error_log('Payout database backup verified: ' . json_encode($manifest));
+    } catch (Exception $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $error;
@@ -105,15 +109,15 @@ function payout_ledger_entry(array $row)
 function payout_append(PDO $pdo, array $body, array $admin)
 {
     if ($admin['role'] !== 'admin') respond(['error' => 'Недостаточно прав.'], 403);
-    $kind = $body['kind'] ?? '';
-    $id = $body['requestId'] ?? '';
-    $managerId = $body['managerId'] ?? '';
+    $kind = payout_value($body, 'kind');
+    $id = payout_value($body, 'requestId');
+    $managerId = payout_value($body, 'managerId');
     $amount = isset($body['amount']) && is_scalar($body['amount']) ? (string) $body['amount'] : '';
     if (!in_array($kind, ['payment', 'accrual'], true)) respond(['error' => 'Выберите тип операции.'], 400);
     if (!is_string($id) || !preg_match('/^[0-9a-f-]{36}$/i', $id)) respond(['error' => 'Некорректный идентификатор операции.'], 400);
     if (!is_scalar($managerId) || !preg_match('/^[0-9]+$/', (string) $managerId)) respond(['error' => 'Выберите менеджера.'], 400);
     if (!preg_match('/^[0-9]{1,10}(\.[0-9]{1,2})?$/', $amount) || payout_cents($amount) <= 0) respond(['error' => 'Укажите положительную сумму с точностью до копеек.'], 400);
-    $reason = $kind === 'accrual' ? ($body['reason'] ?? '') : '';
+    $reason = $kind === 'accrual' ? payout_value($body, 'reason') : '';
     if ($kind === 'accrual' && !in_array($reason, payout_reasons(), true)) respond(['error' => 'Выберите причину начисления.'], 400);
     $statement = $pdo->prepare('SELECT id, login FROM manager_users WHERE id = ?');
     $statement->execute([(int) $managerId]);
@@ -154,20 +158,20 @@ function payout_serialize(array $total)
 function payout_build_report(array $records, array $users, array $ledger, array $user, array $query)
 {
     foreach (['from', 'to', 'month', 'manager'] as $key) if (isset($query[$key]) && !is_string($query[$key])) throw new InvalidArgumentException('Некорректный фильтр.');
-    $from = $query['from'] ?? ''; $to = $query['to'] ?? ''; $month = $query['month'] ?? '';
+    $from = payout_value($query, 'from'); $to = payout_value($query, 'to'); $month = payout_value($query, 'month');
     if ($month !== '') {
         if (!preg_match('/^[0-9]{4}-(0[1-9]|1[0-2])$/', $month)) throw new InvalidArgumentException('Некорректный месяц.');
         $from = $month . '-01'; $to = (new DateTimeImmutable($from))->format('Y-m-t');
     }
     if (($from !== '' && !payout_valid_date($from)) || ($to !== '' && !payout_valid_date($to)) || ($from && $to && $from > $to)) throw new InvalidArgumentException('Проверьте даты начала и окончания периода.');
-    $manager = $query['manager'] ?? '';
+    $manager = payout_value($query, 'manager');
     if ($manager !== '' && (!ctype_digit($manager) || strlen($manager) > 10)) throw new InvalidArgumentException('Некорректный менеджер.');
     $owner = $user['role'] === 'admin' ? ($manager === '' ? null : (int) $manager) : $user['id'];
     $inScope = static function ($id) use ($owner) { return $owner === null || (int) $id === $owner; };
     $names = array_column($users, 'login', 'id'); $entries = [];
     foreach ($records as $record) {
         if (!$inScope($record['ownerId'])) continue;
-        $common = ['managerId' => $record['ownerId'], 'manager' => $names[$record['ownerId']] ?? 'Удалённый пользователь',
+        $common = ['managerId' => $record['ownerId'], 'manager' => payout_value($names, $record['ownerId'], 'Удалённый пользователь'),
             'number' => $record['number'], 'title' => $record['registryMeta']['title'] ?: ($record['counterparty'] ?: 'Без названия')];
         $entries[] = array_merge($common, ['id' => 'sale:' . $record['number'], 'kind' => 'sale', 'date' => $record['date'],
             'reason' => 'Сумма сделки', 'revenue' => payout_cents($record['amount']), 'accrued' => 0, 'paid' => 0]);
@@ -182,7 +186,7 @@ function payout_build_report(array $records, array $users, array $ledger, array 
     foreach ($ledger as $entry) {
         if (!$inScope($entry['managerId'])) continue;
         $entries[] = ['id' => $entry['id'], 'kind' => $entry['kind'], 'date' => $entry['date'], 'managerId' => $entry['managerId'],
-            'manager' => $names[$entry['managerId']] ?? $entry['managerLogin'],
+            'manager' => payout_value($names, $entry['managerId'], $entry['managerLogin']),
             'title' => $entry['kind'] === 'payment' ? 'Выплата бонусов' : 'Дополнительное начисление',
             'reason' => $entry['reason'], 'revenue' => 0, 'accrued' => $entry['kind'] === 'accrual' ? $entry['amountCents'] : 0,
             'paid' => $entry['kind'] === 'payment' ? $entry['amountCents'] : 0, 'createdBy' => $entry['createdByLogin']];
@@ -197,7 +201,7 @@ function payout_build_report(array $records, array $users, array $ledger, array 
     foreach ($ids as $id) {
         if (!$inScope($id)) continue;
         $own = static function ($entry) use ($id) { return $entry['managerId'] === $id; };
-        $managerTotals[] = array_merge(['id' => $id, 'login' => $names[$id] ?? 'Удалённый пользователь'],
+        $managerTotals[] = array_merge(['id' => $id, 'login' => payout_value($names, $id, 'Удалённый пользователь')],
             payout_serialize(payout_sum(array_filter($selected, $own))),
             ['allTimeBalance' => payout_serialize(payout_sum(array_filter($entries, $own)))['balance']]);
     }
@@ -226,7 +230,7 @@ function payout_report(PDO $pdo, array $user, array $query)
     while ($row = $statement->fetch()) {
         $record = record_from_database_row($row, false);
         $record['ownerId'] = (int) $row['owner_id'];
-        $record['bonusQualifiedAt'] = $row['qualified_at'] ?? '';
+        $record['bonusQualifiedAt'] = payout_value($row, 'qualified_at');
         $records[] = $record;
     }
     $statement->closeCursor();
