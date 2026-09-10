@@ -28,6 +28,8 @@ const crypto = require('node:crypto');
     assert.equal((await (await get('users')).json()).find(u=>u.id===2).fullName,'Антон Исаков');
     assert.equal((await get('bitrix/status',manager)).status,403);
     assert.equal((await post('bitrix/config',{},manager)).status,403);
+    assert.equal((await get('bitrix/refresh',manager)).status,403);
+    assert.equal((await post('bitrix/refresh',{},manager)).status,403);
     const config={webhookUrl:'https://portal.example/rest/1/test-token/',eventToken:'test-event-token',paidAmountField:'UF_PAID'};
     assert.equal((await post('bitrix/config',config,admin,{Origin:'https://evil.example'})).status,403);
     const savedConfig=await post('bitrix/config',config);

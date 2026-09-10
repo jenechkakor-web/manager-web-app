@@ -87,12 +87,21 @@
                 <label><span>Повторно загрузить сделку по ID Б24</span><input name="dealId" inputmode="numeric" pattern="[1-9][0-9]*" required placeholder="Например, 17988" /></label>
                 <button class="button ghost" type="submit">Синхронизировать</button>
               </form>
+              <div class="bitrix-refresh-section">
+                <h3>Обновление существующего реестра</h3>
+                <p class="field-hint">Сверяем номер сделки и её создателя. Обновляем название, дату, сумму, источник, оплату и стадию. Предыдущие данные сохраняются на сервере. Записи без однозначного номера Б24 пропускаются.</p>
+                <button class="button primary" id="bitrixRefreshButton" type="button">Обновить все сделки из Б24</button>
+                <button class="button ghost" id="bitrixRefreshStop" type="button" disabled>Остановить</button>
+                <p id="bitrixRefreshStatus" role="status" aria-live="polite"></p>
+                <progress id="bitrixRefreshProgress" max="1" value="0" aria-label="Обновление сделок"></progress>
+                <ol id="bitrixRefreshResults"></ol>
+              </div>
             </section>
           </section>
         </section>
       </section>
     </main>
     <script src="auth.js?v=20260702-deals-prod-1"></script>
-    <script src="users.js?v=20260910-bitrix-1"></script>
+    <script src="users.js?v=20260910-bitrix-refresh-1"></script>
   </body>
 </html>

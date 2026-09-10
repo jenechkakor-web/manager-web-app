@@ -207,25 +207,62 @@ function fullName(value = "") {
   return value.trim().replace(/\s+/gu, " ");
 }
 
-async function syncBitrixDeal(dealId, config) {
+function existingBitrixId(record, config) {
+  const link = record.registryMeta.bitrix;
+  if (link) return link.domain === bitrix.endpoint(config).hostname ? bitrix.id(link.dealId) : '';
+  return bitrix.id(record.number);
+}
+async function refreshBitrixRecord(body, config, admin) {
+  if (typeof body.number !== 'string' || !body.number || body.number.length > 191 || !/^[a-f0-9-]{36}$/.test(body.runId || '')) {
+    throw Object.assign(new Error('Некорректный запрос обновления реестра.'), {status:400});
+  }
+  const records = (await readJson(registryPath)).map(record => normalizeRecord(record)).filter(Boolean);
+  const previous = records.find(record => record.number === body.number);
+  if (!previous) return {number:body.number, skipped:'record_deleted'};
+  const dealId = existingBitrixId(previous, config);
+  if (!dealId) return {number:body.number, skipped:'needs_deal_id'};
+  return syncBitrixDeal(dealId, config, {number:body.number,runId:body.runId,actorId:admin.id});
+}
+async function syncBitrixDeal(dealId, config, refresh = null) {
   if (!bitrix.id(dealId)) throw Object.assign(new Error("Б24: некорректный ID сделки."), { status: 400 });
   const domain = bitrix.endpoint(config).hostname;
   const deleted = await readJson(path.join(dataDir, "bitrix-deleted.json"));
   if (deleted.includes(`${domain}:${dealId}`)) return { skipped: "record_deleted" };
+  const historyPath = path.join(dataDir, 'bitrix-refresh-history.json');
+  const history = refresh ? await readJson(historyPath) : [];
+  const oldAudit = refresh && history.find(item => item.runId === refresh.runId && item.number === refresh.number);
+  if (oldAudit?.result) return oldAudit.result;
   const snapshot = await bitrix.fetchSnapshot(dealId, config, bitrix.createClient(config));
   const records = (await readJson(registryPath)).map(record => normalizeRecord(record)).filter(Boolean);
-  const previous = records.find(record => record.registryMeta.bitrix?.dealId === dealId && record.registryMeta.bitrix.domain === domain);
+  const linked = records.find(record => record.registryMeta.bitrix?.dealId === dealId && record.registryMeta.bitrix.domain === domain);
+  if (refresh && linked && linked.number !== refresh.number) return {skipped:'link_conflict'};
+  const previous = refresh ? records.find(record => record.number === refresh.number) : linked;
+  if (refresh && (!previous || existingBitrixId(previous,config) !== dealId)) return {skipped:'link_conflict'};
   const mapped = bitrix.mapSnapshot(snapshot, config, await readJson(usersPath), previous);
   if (mapped.skipped) return mapped;
   const record = normalizeRecord(mapped.record);
-  if (previous && previous.ownerId !== record.ownerId) throw Object.assign(new Error("Б24: изменена привязка владельца. Проверьте настройки менеджера."), { status: 409 });
-  if (previous && Date.parse(previous.registryMeta.bitrix.modifiedAt) > Date.parse(record.registryMeta.bitrix.modifiedAt)) return { skipped: "stale_snapshot" };
+  if (previous && previous.ownerId !== record.ownerId) {
+    if (refresh) return {skipped:'creator_mismatch'};
+    throw Object.assign(new Error("Б24: изменена привязка владельца. Проверьте настройки менеджера."), { status: 409 });
+  }
+  if (previous?.registryMeta.bitrix && Date.parse(previous.registryMeta.bitrix.modifiedAt) > Date.parse(record.registryMeta.bitrix.modifiedAt)) return { skipped: "stale_snapshot" };
   if (!previous && records.some(item => item.number.toLowerCase() === record.number.toLowerCase())) {
     throw Object.assign(new Error("Номер Б24 уже занят в реестре. Существующая запись сохранена."), { status: 409 });
   }
+  const result = {synced:true,number:record.number,dealStatus:record.registryMeta.bitrix.dealStatus,unmappedStage:record.registryMeta.bitrix.unmappedStage};
+  let audit = oldAudit;
+  if (refresh) {
+    Object.assign(result,{title:record.registryMeta.title,stageName:record.registryMeta.bitrix.stageName,amount:record.amount,paymentStatus:record.registryMeta.paymentStatus});
+    if (!audit) {
+      audit = {...refresh,refreshedAt:new Date().toISOString(),previous};
+      history.push(audit);
+      await writeJson(historyPath,history);
+    }
+  }
   stampQualification(record, previous);
   await writeJson(registryPath, [record, ...records.filter(item => item.number !== record.number)]);
-  return { synced: true, number: record.number, dealStatus: record.registryMeta.bitrix.dealStatus, unmappedStage: record.registryMeta.bitrix.unmappedStage };
+  if (refresh) { audit.result=result; await writeJson(historyPath,history); }
+  return result;
 }
 
 function cookies(req) {
@@ -290,6 +327,15 @@ async function handleApi(req, res, url) {
     if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return sendJson(res, 403, { error: "Запрещенный источник запроса." });
     const body = await readJsonBody(req);
     return sendJson(res, 200, await syncBitrixDeal(bitrix.id(body.dealId), await bitrix.loadConfig(dataDir)));
+  }
+  if (pathname === '/api/bitrix/refresh' && req.method === 'GET') {
+    await requireAdmin(req);
+    return sendJson(res,200,(await readJson(registryPath)).map(record=>({number:record.number})));
+  }
+  if (pathname === '/api/bitrix/refresh' && req.method === 'POST') {
+    const admin = await requireAdmin(req);
+    if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return sendJson(res,403,{error:'Запрещённый источник запроса.'});
+    return sendJson(res,200,await refreshBitrixRecord(await readJsonBody(req),await bitrix.loadConfig(dataDir),admin));
   }
   if (pathname === "/api/payouts") {
     const user = await requireUser(req);

@@ -89,3 +89,30 @@ $remote['deal']['ID'] = '17001'; $config['numberField'] = 'TEST_NUMBER'; $remote
 try { bitrix_sync($pdo, $config, '17001', $call); throw new RuntimeException('Accepted number collision'); } catch (BitrixException $expected) { check_bitrix($expected->getCode() === 409, 'Number collision'); }
 check_bitrix((int) $pdo->query("SELECT COUNT(*) FROM manager_bitrix_deals WHERE deal_id = '17001'")->fetchColumn() === 0, 'Conflict does not leave an orphan link');
 echo "PHP Bitrix MySQL transaction checks passed\n";
+
+unset($config['numberField']);
+$remote = $snapshot; $remote['deal']['ID'] = '17002';
+$manual = normalize_record(['number'=>'17002','amount'=>20000,'data'=>['customer'=>['name'=>'Сохранить реквизиты']],
+    'registryMeta'=>['title'=>'Ручная запись','source'=>'Директ','bonusType'=>'5%','closingDocs'=>'Отправлены']]);
+save_record($pdo,$manual,['id'=>2,'role'=>'user']);
+$manualRow = $pdo->query("SELECT * FROM manager_contracts WHERE record_number = '17002'")->fetch();
+$runId = '12345678-1234-4234-8234-123456789abc';
+$result = bitrix_refresh_record($pdo,$config,'17002',$runId,1,$call);
+check_bitrix($result['synced'] && $result['amount'] == 100000, 'Existing deal refreshed');
+$adopted = fetch_record($pdo,['id'=>1,'role'=>'admin'],'17002');
+check_bitrix($adopted['data'] === $manual['data'] && $adopted['registryMeta']['bonusType'] === '5%', 'Manual document and bonus type preserved');
+check_bitrix($adopted['registryMeta']['bitrix']['dealId'] === '17002', 'Existing record linked');
+$audit = json_decode($pdo->query("SELECT previous_json FROM manager_bitrix_refresh_history WHERE record_number = '17002'")->fetchColumn(),true);
+check_bitrix($audit['record'] === $manualRow, 'Full previous database row backed up');
+$remote['deal']['OPPORTUNITY'] = '200000';
+check_bitrix(bitrix_refresh_record($pdo,$config,'17002',$runId,1,$call) === $result, 'Same run replay does not apply another snapshot');
+check_bitrix(fetch_record($pdo,['id'=>1,'role'=>'admin'],'17002')['amount'] == 100000, 'Replay keeps original result');
+bitrix_sync($pdo,$config,'17002',$call);
+check_bitrix(fetch_record($pdo,['id'=>1,'role'=>'admin'],'17002')['amount'] == 200000, 'Future events update adopted records');
+$manual['number']='17003'; save_record($pdo,$manual,['id'=>1,'role'=>'admin']); $remote['deal']['ID']='17003';
+check_bitrix(bitrix_refresh_record($pdo,$config,'17003',$runId,1,$call)['skipped'] === 'creator_mismatch', 'Wrong creator skipped');
+check_bitrix((int)$pdo->query("SELECT COUNT(*) FROM manager_bitrix_deals WHERE deal_id = '17003'")->fetchColumn() === 0, 'Skipped record has no link');
+$manual['number']='17002_2'; save_record($pdo,$manual,['id'=>2,'role'=>'user']);
+check_bitrix(bitrix_refresh_record($pdo,$config,'17002_2',$runId,1,$call)['skipped'] === 'needs_deal_id', 'Suffix never guessed');
+check_bitrix(bitrix_refresh_record($pdo,$config,'99999',$runId,1,$call)['skipped'] === 'record_deleted', 'Refresh never creates a missing registry record');
+echo "PHP Bitrix existing-registry refresh checks passed\n";

@@ -14,6 +14,7 @@ const periodApplyButton = document.querySelector("#registryPeriodApply");
 const periodResetButton = document.querySelector("#registryPeriodReset");
 const sourceFilter = document.querySelector("#registrySourceFilter");
 const paymentStatusFilter = document.querySelector("#registryPaymentStatusFilter");
+const dealStatusFilter = document.querySelector("#registryDealStatusFilter");
 const paymentTypeFilter = document.querySelector("#registryPaymentTypeFilter");
 const closingDocsFilter = document.querySelector("#registryClosingDocsFilter");
 const managerFilter = document.querySelector("#registryManagerFilter");
@@ -353,6 +354,7 @@ function renderFilterOptions() {
   setFilterOptions(monthFilter, months, "Все месяцы", formatMonth);
   setFilterOptions(sourceFilter, sourceOptions, "Все источники", (value) => (value === EMPTY_SOURCE_FILTER ? "Не указано" : value));
   setFilterOptions(paymentStatusFilter, window.ContractRegistry.PAYMENT_STATUS_OPTIONS, "Все варианты");
+  setFilterOptions(dealStatusFilter, ["Планируется", "В работе", "Завершена"], "Все статусы");
   setFilterOptions(paymentTypeFilter, window.ContractRegistry.PAYMENT_TYPE_OPTIONS, "Все варианты");
   setFilterOptions(closingDocsFilter, window.ContractRegistry.CLOSING_DOCS_OPTIONS, "Все варианты");
   setFilterOptions(managerFilter, managers, "Все менеджеры");
@@ -576,6 +578,7 @@ function filteredRecords() {
       inAppliedDateRange &&
       (!sourceFilter.value || (sourceFilter.value === EMPTY_SOURCE_FILTER ? !meta.source : meta.source === sourceFilter.value)) &&
       (!paymentStatusFilter.value || meta.paymentStatus === paymentStatusFilter.value) &&
+      (!dealStatusFilter.value || dealStatus(record) === dealStatusFilter.value) &&
       (!paymentTypeFilter.value || meta.paymentType === paymentTypeFilter.value) &&
       (!closingDocsFilter.value || meta.closingDocs === closingDocsFilter.value) &&
       (!managerFilter.value || ownerLogin === managerFilter.value)
@@ -1111,7 +1114,7 @@ addDealModal.addEventListener("keydown", (event) => {
   }
 });
 searchInput.addEventListener("input", render);
-[sourceFilter, paymentStatusFilter, paymentTypeFilter, closingDocsFilter, managerFilter].forEach((filter) => {
+[sourceFilter, paymentStatusFilter, dealStatusFilter, paymentTypeFilter, closingDocsFilter, managerFilter].forEach((filter) => {
   filter.addEventListener("change", render);
 });
 monthFilter.addEventListener("change", () => {

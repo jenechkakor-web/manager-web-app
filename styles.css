@@ -2381,3 +2381,8 @@ fieldset {
     width: 100%;
   }
 }
+.bitrix-refresh-section { margin-top: 24px; }
+.bitrix-refresh-section progress { display: block; width: 100%; margin: 12px 0; }
+#bitrixRefreshResults { max-height: 360px; overflow: auto; padding-left: 24px; }
+#bitrixRefreshResults li { padding: 5px 0; }
+#bitrixRefreshResults [data-result="error"] { color: #a62626; }

@@ -235,7 +235,34 @@ function bitrix_save_config(array $config)
     }
     if (function_exists('opcache_invalidate')) opcache_invalidate(__DIR__ . '/bitrix.local.php', true);
 }
-function bitrix_sync(PDO $pdo, array $config, $id, $call = null)
+function bitrix_existing_deal_id(array $record, array $config)
+{
+    $link = bitrix_value(bitrix_value($record, 'registryMeta', []), 'bitrix', []);
+    if ($link) {
+        if (bitrix_value($link, 'domain') !== strtolower(parse_url(bitrix_endpoint($config), PHP_URL_HOST))) return '';
+        return bitrix_id(bitrix_value($link, 'dealId'));
+    }
+    // Suffixes and numberless invoices may be parts of another deal. Never guess.
+    return bitrix_id(bitrix_value($record, 'number'));
+}
+function bitrix_refresh_record(PDO $pdo, array $config, $number, $runId, $actorId, $call = null)
+{
+    if (!is_string($number) || $number === '' || strlen($number) > 764 || !is_string($runId)
+        || !preg_match('/^[a-f0-9-]{36}$/D', $runId)) throw new BitrixException('Некорректный запрос обновления реестра.', 400);
+    $statement = $pdo->prepare('SELECT * FROM manager_contracts WHERE record_number = ?');
+    $statement->execute([$number]); $row = $statement->fetch();
+    if (!$row) return ['number' => $number, 'skipped' => 'record_deleted'];
+    $id = bitrix_existing_deal_id(record_from_database_row($row, false), $config);
+    if (!$id) return ['number' => $number, 'skipped' => 'needs_deal_id'];
+    $pdo->exec("CREATE TABLE IF NOT EXISTS manager_bitrix_refresh_history (
+        run_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        record_number VARCHAR(191) NOT NULL, refreshed_at VARCHAR(40) NOT NULL,
+        actor_id INT UNSIGNED NOT NULL, previous_json LONGTEXT NOT NULL, result_json LONGTEXT NOT NULL,
+        PRIMARY KEY (run_id, record_number)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    return bitrix_sync($pdo, $config, $id, $call, ['number' => $number, 'runId' => $runId, 'actorId' => $actorId]);
+}
+function bitrix_sync(PDO $pdo, array $config, $id, $call = null, $refresh = null)
 {
     $id = bitrix_id($id);
     if (!$id) throw new BitrixException('Б24: некорректный ID сделки.', 400);
@@ -252,6 +279,11 @@ function bitrix_sync(PDO $pdo, array $config, $id, $call = null)
     $statement = $pdo->prepare('SELECT GET_LOCK(?, 5)'); $statement->execute([$lock]);
     if ((int) $statement->fetchColumn() !== 1) throw new BitrixException('Сделка Б24 синхронизируется. Повторите запрос.', 503);
     try {
+        if ($refresh) {
+            $statement = $pdo->prepare('SELECT result_json FROM manager_bitrix_refresh_history WHERE run_id = ? AND record_number = ?');
+            $statement->execute([$refresh['runId'], $refresh['number']]); $savedResult = $statement->fetchColumn();
+            if ($savedResult !== false) return json_decode($savedResult, true);
+        }
         if (!$call) $call = static function ($method, $params) use ($config) { return bitrix_call($config, $method, $params); };
         // Fetch after acquiring the lock: out-of-order notifications always read current CRM state.
         $snapshot = bitrix_fetch_snapshot($id, $call);
@@ -259,34 +291,58 @@ function bitrix_sync(PDO $pdo, array $config, $id, $call = null)
         $statement = $pdo->prepare('SELECT record_number FROM manager_bitrix_deals WHERE portal_key = ? AND deal_id = ? FOR UPDATE');
         $statement->execute([$portalKey, $id]); $number = $statement->fetchColumn();
         $previous = null;
-        if ($number !== false) {
+        if ($refresh && $number !== false && $number !== $refresh['number']) {
+            $pdo->commit(); return ['number' => $refresh['number'], 'skipped' => 'link_conflict'];
+        }
+        if ($number !== false || $refresh) {
             $statement = $pdo->prepare('SELECT * FROM manager_contracts WHERE record_number = ? FOR UPDATE');
-            $statement->execute([$number]); $row = $statement->fetch();
+            $statement->execute([$refresh ? $refresh['number'] : $number]); $row = $statement->fetch();
             // A deleted registry row is not silently recreated on the next update.
             if (!$row) { $pdo->commit(); return ['skipped' => 'record_deleted']; }
             $previous = record_from_database_row($row, true);
             $previous['ownerId'] = (int) $row['owner_id'];
+            if ($refresh && bitrix_existing_deal_id($previous, $config) !== $id) {
+                $pdo->commit(); return ['number' => $refresh['number'], 'skipped' => 'link_conflict'];
+            }
         }
         $mapped = bitrix_map_snapshot($snapshot, $config, fetch_users($pdo), $previous);
         if (isset($mapped['skipped'])) { $pdo->commit(); return $mapped; }
         $owner = $mapped['record']['ownerId'];
         $record = normalize_record($mapped['record']);
-        if ($previous && $owner !== $previous['ownerId']) throw new BitrixException('Б24: изменена привязка владельца. Проверьте настройки менеджера.', 409);
-        if ($previous && strtotime($previous['registryMeta']['bitrix']['modifiedAt']) > strtotime($record['registryMeta']['bitrix']['modifiedAt'])) {
+        if ($previous && $owner !== $previous['ownerId']) {
+            if ($refresh) { $pdo->commit(); return ['number' => $refresh['number'], 'skipped' => 'creator_mismatch']; }
+            throw new BitrixException('Б24: изменена привязка владельца. Проверьте настройки менеджера.', 409);
+        }
+        if (!empty($previous['registryMeta']['bitrix']['modifiedAt']) && strtotime($previous['registryMeta']['bitrix']['modifiedAt']) > strtotime($record['registryMeta']['bitrix']['modifiedAt'])) {
             $pdo->commit(); return ['skipped' => 'stale_snapshot'];
         }
-        if (!$previous) {
-            $statement = $pdo->prepare('SELECT record_number FROM manager_contracts WHERE record_number = ? FOR UPDATE');
-            $statement->execute([$record['number']]);
-            if ($statement->fetch()) throw new BitrixException('Номер Б24 уже занят в реестре. Существующая запись сохранена.', 409);
+        if ($number === false) {
+            if (!$previous) {
+                $statement = $pdo->prepare('SELECT record_number FROM manager_contracts WHERE record_number = ? FOR UPDATE');
+                $statement->execute([$record['number']]);
+                if ($statement->fetch()) throw new BitrixException('Номер Б24 уже занят в реестре. Существующая запись сохранена.', 409);
+            }
             $statement = $pdo->prepare('INSERT INTO manager_bitrix_deals (portal_key, deal_id, record_number) VALUES (?, ?, ?)');
             $statement->execute([$portalKey, $id, $record['number']]);
+        }
+        $result = ['synced' => true, 'number' => $record['number'], 'dealStatus' => $record['registryMeta']['bitrix']['dealStatus'],
+            'unmappedStage' => $record['registryMeta']['bitrix']['unmappedStage']];
+        if ($refresh) {
+            $statement = $pdo->prepare('SELECT qualified_at FROM manager_bonus_qualification WHERE record_number = ? FOR UPDATE');
+            $statement->execute([$record['number']]); $oldQualification = $statement->fetchColumn();
+            $result['title'] = $record['registryMeta']['title'];
+            $result['stageName'] = $record['registryMeta']['bitrix']['stageName'];
+            $result['amount'] = $record['amount'];
+            $result['paymentStatus'] = $record['registryMeta']['paymentStatus'];
+            $statement = $pdo->prepare('INSERT INTO manager_bitrix_refresh_history (run_id, record_number, refreshed_at, actor_id, previous_json, result_json) VALUES (?, ?, ?, ?, ?, ?)');
+            $statement->execute([$refresh['runId'], $record['number'], gmdate('c'), $refresh['actorId'],
+                json_encode(['record' => $row, 'qualifiedAt' => $oldQualification, 'linkedBefore' => $number !== false], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)]);
         }
         // CRM linkage, record and qualification timestamp commit together.
         save_record($pdo, $record, ['id' => $owner, 'role' => 'user'], true);
         $pdo->commit();
-        return ['synced' => true, 'number' => $record['number'], 'dealStatus' => $record['registryMeta']['bitrix']['dealStatus'],
-            'unmappedStage' => $record['registryMeta']['bitrix']['unmappedStage']];
+        return $result;
     } catch (Exception $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $error;

@@ -531,6 +531,18 @@ try {
         session_write_close();
         respond(bitrix_sync($pdo, bitrix_value($config, 'bitrix', []), bitrix_value(request_json(), 'dealId')));
     }
+    if ($route === 'bitrix/refresh' && $method === 'GET') {
+        $admin = require_admin($pdo);
+        $records = fetch_records($pdo, $admin);
+        respond(array_map(static function ($record) { return ['number' => $record['number']]; }, $records));
+    }
+    if ($route === 'bitrix/refresh' && $method === 'POST') {
+        require_same_origin();
+        $admin = require_admin($pdo);
+        $body = request_json();
+        session_write_close();
+        respond(bitrix_refresh_record($pdo, bitrix_value($config, 'bitrix', []), bitrix_value($body, 'number'), bitrix_value($body, 'runId'), $admin['id']));
+    }
     if ($route === 'auth/login' && $method === 'POST') {
         require_same_origin();
         $body = request_json();

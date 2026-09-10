@@ -205,7 +205,7 @@ async function bitrixRequest(route, body) {
   const response = await fetch(`/api/bitrix/${route}`, { cache: "no-store", method: body ? "POST" : "GET",
     headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "Ошибка подключения Б24.");
+  if (!response.ok) throw Object.assign(new Error(result.error || "Ошибка подключения Б24."), {status:response.status});
   return result;
 }
 
@@ -255,5 +255,51 @@ async function initUsers() {
   resetCreateUserForm();
   await loadUsers();
 }
+
+const refreshButton = document.querySelector('#bitrixRefreshButton');
+const refreshStop = document.querySelector('#bitrixRefreshStop');
+const refreshStatus = document.querySelector('#bitrixRefreshStatus');
+const refreshProgress = document.querySelector('#bitrixRefreshProgress');
+const refreshResults = document.querySelector('#bitrixRefreshResults');
+let refreshStopped = false;
+refreshStop.addEventListener('click', () => { refreshStopped = true; refreshStop.disabled = true; });
+refreshButton.addEventListener('click', async () => {
+  refreshButton.disabled = true; refreshStop.disabled = false; refreshStopped = false;
+  refreshResults.replaceChildren(); refreshStatus.textContent = 'Получаю список сделок…';
+  const runId = crypto.randomUUID();
+  let completed = 0, updated = 0, skipped = 0, failed = 0;
+  const reasons = {needs_deal_id:'Номер требует уточнения', creator_mismatch:'Создатель Б24 отличается от менеджера реестра',
+    manager_not_allowed_or_unmapped:'Создатель не связан с разрешённым менеджером', record_deleted:'Запись удалена',
+    link_conflict:'Конфликт привязки к Б24', stale_snapshot:'В реестре более свежие данные'};
+  try {
+    const list = await bitrixRequest('refresh');
+    refreshProgress.max = Math.max(1,list.length); refreshProgress.value = 0;
+    for (const {number} of list) {
+      if (refreshStopped) break;
+      const row = document.createElement('li'); row.dataset.number = number;
+      row.textContent = `${number}: загружаю…`; refreshResults.append(row);
+      try {
+        let result;
+        for (let attempt=0; attempt<3; attempt++) {
+          try { result = await bitrixRequest('refresh',{number,runId}); break; }
+          catch(error) {
+            if (attempt===2 || ![429,502,503,504].includes(error.status)) throw error;
+            await new Promise(resolve=>setTimeout(resolve,3000*(attempt+1)));
+          }
+        }
+        row.dataset.result = result.synced ? 'updated' : 'skipped';
+        if (result.synced) {
+          updated++;
+          row.textContent = `${number}: ${result.title} — ${result.dealStatus}, ${new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB'}).format(result.amount)}, оплата: ${result.paymentStatus}${result.unmappedStage ? `; стадия Б24: ${result.stageName} — требуется сопоставление` : ''}`;
+        } else { skipped++; row.textContent = `${number}: ${reasons[result.skipped] || 'Пропущена'}`; }
+      } catch(error) { failed++; row.dataset.result='error'; row.textContent=`${number}: ${error.message}`; }
+      completed++; refreshProgress.value = completed;
+      refreshStatus.textContent = `Обработано ${completed} из ${list.length}. Обновлено: ${updated}. Пропущено: ${skipped}. Ошибок: ${failed}.`;
+      if (completed<list.length && !refreshStopped) await new Promise(resolve=>setTimeout(resolve,2400));
+    }
+    refreshStatus.textContent = `${refreshStopped ? 'Остановлено.' : 'Обновление завершено.'} Обработано ${completed} из ${list.length}. Обновлено: ${updated}. Пропущено: ${skipped}. Ошибок: ${failed}.`;
+  } catch(error) { refreshStatus.textContent=error.message; }
+  finally { refreshButton.disabled=false; refreshStop.disabled=true; }
+});
 
 initUsers();
