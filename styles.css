@@ -2093,7 +2093,7 @@ fieldset {
 
 .user-create-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(170px, 0.7fr) auto;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   align-items: end;
 }
@@ -2105,7 +2105,7 @@ fieldset {
 
 .user-row {
   display: grid;
-  grid-template-columns: minmax(160px, 0.8fr) minmax(160px, 0.45fr) minmax(330px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 14px;
   align-items: end;
   padding: 14px;
@@ -2133,11 +2133,20 @@ fieldset {
   }
 }
 
-.user-password-action {
+.user-password-action,
+.user-profile-action {
   display: grid;
   grid-template-columns: minmax(190px, 1fr) auto;
   gap: 8px;
   align-items: end;
+}
+
+@media (min-width: 721px) {
+  .user-row > .user-name { grid-column: 1; grid-row: 1; }
+  .user-row > label { grid-column: 2; grid-row: 1; }
+  .user-row > [data-delete-user] { grid-column: 3; grid-row: 1; }
+  .user-profile-action { grid-column: 1 / -1; grid-row: 2; }
+  .user-password-action { grid-column: 1 / -1; grid-row: 3; }
 }
 
 .user-name {
@@ -2320,7 +2329,8 @@ fieldset {
   .tech-card-header,
   .user-create-grid,
   .user-row,
-  .user-password-action {
+  .user-password-action,
+  .user-profile-action {
     grid-template-columns: 1fr;
   }
 

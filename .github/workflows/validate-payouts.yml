@@ -2,7 +2,7 @@ name: Validate payouts
 on:
   workflow_call:
   push:
-    branches: ["codex/payouts-release"]
+    branches: ["codex/payouts-release", "codex/bitrix-integration"]
 permissions:
   contents: read
 jobs:
@@ -36,12 +36,15 @@ jobs:
         run: |
           php -l api/index.php
           php -l api/payouts.php
+          php -l api/bitrix.php
+          php tests/bitrix-php.php
           node --check payouts.js
           node --check payouts-table.js
-          node --test tests/payouts.test.cjs
+          node --test tests/payouts.test.cjs tests/bitrix.test.cjs
       - name: PHP MySQL migration and API tests on disposable database
         env:
           PAYOUT_TEST_MYSQL: '1'
         run: |
           php tests/payouts-php.php
           node tests/payouts-php-http.cjs
+          php tests/bitrix-php.php

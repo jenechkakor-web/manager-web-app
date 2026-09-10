@@ -1,0 +1,9 @@
+{
+  "config": {"webhookUrl":"https://portal.example/rest/1/test-token/","eventToken":"test-event-token","paidAmountField":"UF_PAID"},
+  "users": [{"id":1,"login":"admin","role":"admin","fullName":""},{"id":2,"login":"anton","role":"user","fullName":"Антон Исаков"},{"id":3,"login":"other","role":"user","fullName":"Посторонний Сотрудник"}],
+  "snapshot": {
+    "creator":{"ID":"138","NAME":"Антон","LAST_NAME":"Исаков"},
+    "stageName":"Создать Счет и Договор (м)", "source":"SEO (verkup.ru)",
+    "deal":{"ID":"17000","TITLE":"Вывеска","CREATED_BY_ID":"138","ASSIGNED_BY_ID":"999","CATEGORY_ID":"0","STAGE_ID":"NEW","SOURCE_ID":"WEB","OPPORTUNITY":"100000.00","CURRENCY_ID":"RUB","UF_PAID":"50000.00|RUB","DATE_CREATE":"2026-09-10T01:30:00+03:00","DATE_MODIFY":"2026-09-10T10:00:00+03:00"}
+  }
+}

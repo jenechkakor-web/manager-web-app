@@ -20,6 +20,11 @@ if (is_file($dadataConfigPath)) {
 }
 
 $required = ['db_host', 'db_name', 'db_user', 'db_password', 'admin_login', 'admin_password'];
+$bitrixConfigPath = __DIR__ . '/bitrix.local.php';
+if (is_file($bitrixConfigPath)) {
+    $config['bitrix'] = require $bitrixConfigPath;
+    if (!is_array($config['bitrix'])) throw new RuntimeException('Bitrix configuration is invalid.');
+}
 foreach ($required as $key) {
     if (!array_key_exists($key, $config) || trim((string) $config[$key]) === '') {
         throw new RuntimeException("Server configuration key {$key} is missing.");

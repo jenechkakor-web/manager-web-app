@@ -346,9 +346,10 @@ function renderFilterOptions() {
   const months = [...new Set(records.map((record) => String(record.date || "").slice(0, 7)).filter((value) => /^\d{4}-\d{2}$/.test(value)))]
     .sort((a, b) => b.localeCompare(a));
   const managers = [...new Set(records.map((record) => record.ownerLogin || "admin"))].sort((a, b) => a.localeCompare(b, "ru"));
-  const sourceOptions = records.some((record) => !record.registryMeta.source)
-    ? [EMPTY_SOURCE_FILTER, ...window.ContractRegistry.SOURCE_OPTIONS]
-    : window.ContractRegistry.SOURCE_OPTIONS;
+  const sourceOptions = [...new Set([
+    ...(records.some(record => !record.registryMeta.source) ? [EMPTY_SOURCE_FILTER] : []),
+    ...window.ContractRegistry.SOURCE_OPTIONS, ...records.map(record => record.registryMeta.source).filter(Boolean),
+  ])];
   setFilterOptions(monthFilter, months, "Все месяцы", formatMonth);
   setFilterOptions(sourceFilter, sourceOptions, "Все источники", (value) => (value === EMPTY_SOURCE_FILTER ? "Не указано" : value));
   setFilterOptions(paymentStatusFilter, window.ContractRegistry.PAYMENT_STATUS_OPTIONS, "Все варианты");
@@ -375,6 +376,7 @@ function hasPaymentRemainder(record, prepayment = record.registryMeta.prepayment
 }
 
 function dealStatus(record) {
+  if (record.registryMeta.bitrix) return record.registryMeta.bitrix.dealStatus;
   const { paymentStatus, closingDocs } = record.registryMeta;
   const closingComplete = closingDocs === "Отправлены" || closingDocs === "Не нужно";
   if (paymentStatus === "Да" && !hasPaymentRemainder(record) && closingComplete) return "Завершена";
@@ -690,6 +692,9 @@ function editorMarkup(record, field) {
 }
 
 function editableCell(record, field, enabled = true, extraClass = "") {
+  if (record.registryMeta.bitrix && !canEditField(record, field)) {
+    return staticCell(editableDisplayValue(record, field), extraClass, "Обновляется из Битрикс24", field);
+  }
   const isEditing = enabled && editingCell?.number === record.number && editingCell?.field === field;
   if (isEditing) return `<td class="registry-data-cell is-editing" data-column="${escapeHtml(field)}">${editorMarkup(record, field)}</td>`;
   const value = editableDisplayValue(record, field);
@@ -723,7 +728,7 @@ function render() {
           ${staticCell(money(remainder(record)), "registry-money-value", money(remainder(record)), "remainder")}
           ${editableCell(record, "paymentType")}
           ${editableCell(record, "closingDocs", true, closingTone(meta.closingDocs))}
-          ${staticCell(currentDealStatus, dealTone(currentDealStatus), currentDealStatus, "dealStatus")}
+          ${staticCell(currentDealStatus, dealTone(currentDealStatus), meta.bitrix ? `Б24: ${meta.bitrix.stageName}${meta.bitrix.unmappedStage ? " — стадия не сопоставлена" : ""}` : currentDealStatus, "dealStatus")}
           ${editableCell(record, "bonusType")}
           ${editableCell(record, "bonusAmount", profitBonus)}
           ${isAdmin ? markupCell(`<span class="status-badge ${record.status}">${escapeHtml(statusLabel(record.status))}</span>`, "", "recordStatus") : ""}
@@ -743,6 +748,7 @@ function render() {
 }
 
 function canEditField(record, field) {
+  if (record.registryMeta.bitrix && ["title", "source", "paymentStatus", "prepayment"].includes(field)) return false;
   if (field === "prepayment") return record.registryMeta.paymentStatus === "Да" || record.registryMeta.paymentStatus === "Предоплата";
   if (field === "bonusAmount") return record.registryMeta.bonusType === "от прибыли";
   return true;

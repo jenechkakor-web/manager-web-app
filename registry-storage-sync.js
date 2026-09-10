@@ -34,7 +34,8 @@
       : roundMoney(Math.max(0, Math.min(amount, Number(rawPrepayment) || 0)));
     return {
       title: String(source.title || "").trim(),
-      source: choice(source.source, SOURCE_OPTIONS, ""),
+      source: typeof source.source === "string" ? source.source.trim() : "",
+      bitrix: source.bitrix && typeof source.bitrix === "object" ? source.bitrix : null,
       paymentStatus: choice(source.paymentStatus, PAYMENT_STATUS_OPTIONS, "Планируется"),
       prepayment,
       prepaymentOverridden: source.prepaymentOverridden === true,

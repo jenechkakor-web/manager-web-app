@@ -1,5 +1,9 @@
 Options -Indexes
 
+<FilesMatch "^bitrix.*\.(php|json|cjs)$">
+  Require all denied
+</FilesMatch>
+
 <FilesMatch "^(config(?:\.local(?:\.example)?)?\.php|dadata-(?:client)\.php|dadata\.local(?:\.example)?\.php|runtime\.php|payouts\.php|.*\.sql)$">
   Require all denied
 </FilesMatch>

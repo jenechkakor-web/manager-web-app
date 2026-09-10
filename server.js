@@ -3,6 +3,7 @@ const fs = require("node:fs/promises");
 const http = require("node:http");
 const path = require("node:path");
 const { createPayoutStore, buildReport, stampQualification } = require("./api/payouts-local.cjs");
+const bitrix = require("./api/bitrix-local.cjs");
 
 const rootDir = __dirname;
 const dataDir = process.env.MANAGER_DATA_DIR ? path.resolve(process.env.MANAGER_DATA_DIR) : path.join(rootDir, ".data");
@@ -14,6 +15,12 @@ const port = Number(process.env.PORT || 4173);
 const adminLogin = process.env.ADMIN_LOGIN || "admin";
 const adminPassword = process.env.ADMIN_PASSWORD || "admin2026";
 const sessions = new Map();
+let mutationQueue = Promise.resolve();
+function serializeMutation(action) {
+  const result = mutationQueue.then(action);
+  mutationQueue = result.catch(() => {});
+  return result;
+}
 const SOURCE_OPTIONS = ["Директ", "Агент", "Повтор", "Сарафан", "Авито", "Парсинг", "SEO", "Профи.ру"];
 const PAYMENT_STATUS_OPTIONS = ["Да", "Предоплата", "Планируется"];
 const PAYMENT_TYPE_OPTIONS = ["ИП", "ООО", "Наличка"];
@@ -102,7 +109,8 @@ function normalizeRegistryMeta(entry, data, amount) {
     : roundMoney(Math.max(0, Math.min(amount, Number(rawPrepayment) || 0)));
   return {
     title: String(source.title || "").trim(),
-    source: normalizeChoice(source.source, SOURCE_OPTIONS, ""),
+    source: typeof source.source === "string" ? source.source.trim() : "",
+    bitrix: source.bitrix && typeof source.bitrix === "object" ? source.bitrix : null,
     paymentStatus: normalizeChoice(source.paymentStatus, PAYMENT_STATUS_OPTIONS, "Планируется"),
     prepayment,
     prepaymentOverridden: source.prepaymentOverridden === true,
@@ -153,7 +161,9 @@ async function readJson(file, fallback = []) {
 
 async function writeJson(file, value) {
   await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  const temporary = `${file}.${crypto.randomUUID()}.tmp`;
+  await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await fs.rename(temporary, file);
 }
 
 async function ensureData() {
@@ -187,7 +197,35 @@ async function ensureData() {
 }
 
 function publicUser(user) {
-  return { id: Number(user.id), login: user.login, role: user.role === "admin" ? "admin" : "user", createdAt: user.createdAt };
+  return { id: Number(user.id), login: user.login, fullName: user.fullName || "", role: user.role === "admin" ? "admin" : "user", createdAt: user.createdAt };
+}
+
+function fullName(value = "") {
+  if (typeof value !== "string" || [...value].length > 191 || /[\x00-\x1f\x7f]/.test(value)) {
+    throw Object.assign(new Error("ФИО: не более 191 символа, без управляющих символов."), { status: 400 });
+  }
+  return value.trim().replace(/\s+/gu, " ");
+}
+
+async function syncBitrixDeal(dealId, config) {
+  if (!bitrix.id(dealId)) throw Object.assign(new Error("Б24: некорректный ID сделки."), { status: 400 });
+  const domain = bitrix.endpoint(config).hostname;
+  const deleted = await readJson(path.join(dataDir, "bitrix-deleted.json"));
+  if (deleted.includes(`${domain}:${dealId}`)) return { skipped: "record_deleted" };
+  const snapshot = await bitrix.fetchSnapshot(dealId, config, bitrix.createClient(config));
+  const records = (await readJson(registryPath)).map(record => normalizeRecord(record)).filter(Boolean);
+  const previous = records.find(record => record.registryMeta.bitrix?.dealId === dealId && record.registryMeta.bitrix.domain === domain);
+  const mapped = bitrix.mapSnapshot(snapshot, config, await readJson(usersPath), previous);
+  if (mapped.skipped) return mapped;
+  const record = normalizeRecord(mapped.record);
+  if (previous && previous.ownerId !== record.ownerId) throw Object.assign(new Error("Б24: изменена привязка владельца. Проверьте настройки менеджера."), { status: 409 });
+  if (previous && Date.parse(previous.registryMeta.bitrix.modifiedAt) > Date.parse(record.registryMeta.bitrix.modifiedAt)) return { skipped: "stale_snapshot" };
+  if (!previous && records.some(item => item.number.toLowerCase() === record.number.toLowerCase())) {
+    throw Object.assign(new Error("Номер Б24 уже занят в реестре. Существующая запись сохранена."), { status: 409 });
+  }
+  stampQualification(record, previous);
+  await writeJson(registryPath, [record, ...records.filter(item => item.number !== record.number)]);
+  return { synced: true, number: record.number, dealStatus: record.registryMeta.bitrix.dealStatus, unmappedStage: record.registryMeta.bitrix.unmappedStage };
 }
 
 function cookies(req) {
@@ -230,6 +268,22 @@ function recordsForUser(records, users, user) {
 
 async function handleApi(req, res, url) {
   const { pathname } = url;
+  if (pathname === "/api/bitrix/events") {
+    if (req.method !== "POST") return sendJson(res, 405, { error: "Метод не поддерживается." });
+    const config = await bitrix.loadConfig();
+    const dealId = bitrix.authenticate(await bitrix.readEvent(req), config);
+    return sendJson(res, 200, dealId ? await syncBitrixDeal(dealId, config) : { skipped: "unsupported_event" });
+  }
+  if (pathname === "/api/bitrix/status" && req.method === "GET") {
+    await requireAdmin(req);
+    return sendJson(res, 200, bitrix.configurationStatus(await bitrix.loadConfig(), await readJson(usersPath)));
+  }
+  if (pathname === "/api/bitrix/sync" && req.method === "POST") {
+    await requireAdmin(req);
+    if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return sendJson(res, 403, { error: "Запрещенный источник запроса." });
+    const body = await readJsonBody(req);
+    return sendJson(res, 200, await syncBitrixDeal(bitrix.id(body.dealId), await bitrix.loadConfig()));
+  }
   if (pathname === "/api/payouts") {
     const user = await requireUser(req);
     const users = await readJson(usersPath);
@@ -341,6 +395,7 @@ async function handleApi(req, res, url) {
       users.push({
         id: Math.max(0, ...users.map((user) => user.id)) + 1,
         login,
+        fullName: fullName(body.fullName),
         passwordHash: hashPassword(password),
         role: body.role === "admin" ? "admin" : "user",
         createdAt: new Date().toISOString(),
@@ -352,6 +407,12 @@ async function handleApi(req, res, url) {
     const target = users.find((user) => user.id === Number(body.id));
     if (!target) throw Object.assign(new Error("Пользователь не найден."), { status: 404 });
     if (req.method === "PUT") {
+      if (body.action === "profile") {
+        target.fullName = fullName(body.fullName);
+        await writeJson(usersPath, users);
+        sendJson(res, 200, users.map(publicUser).sort((a, b) => a.login.localeCompare(b.login)));
+        return;
+      }
       if (body.action === "password") {
         const password = String(body.password || "");
         if (password.length < 8) {
@@ -419,6 +480,7 @@ async function handleApi(req, res, url) {
           existing.data,
           existing.amount,
         );
+        bitrix.preserveCrmFields({ registryMeta: nextRegistryMeta }, existing);
         assertPaidStatusHasNoRemainder(nextRegistryMeta, existing.amount);
         const previousRecord = { ...existing };
         existing.registryMeta = nextRegistryMeta;
@@ -429,6 +491,13 @@ async function handleApi(req, res, url) {
         return;
       }
       if (body.action === "delete") {
+        const removed = records.find(record => record.number === String(body.number || "").trim() && (user.role === "admin" || record.ownerId === user.id));
+        if (removed?.registryMeta.bitrix) {
+          const file = path.join(dataDir, "bitrix-deleted.json");
+          const deleted = await readJson(file);
+          const external = removed.registryMeta.bitrix;
+          await writeJson(file, [...new Set([...deleted, `${external.domain}:${external.dealId}`])]);
+        }
         records = records.filter(
           (record) => record.number !== String(body.number || "").trim() || (user.role !== "admin" && record.ownerId !== user.id),
         );
@@ -451,6 +520,7 @@ async function handleApi(req, res, url) {
             : templatePrepayment(incoming.data, incoming.amount),
         };
       }
+      bitrix.preserveCrmFields(incoming, existing);
       assertPaidStatusHasNoRemainder(incoming.registryMeta, incoming.amount);
       stampQualification(incoming, existing);
       records = [incoming, ...records.filter((record) => record.number !== incoming.number)];
@@ -487,6 +557,7 @@ async function handleStatic(req, res, pathname) {
   if (
     !filePath.startsWith(rootDir) ||
     cleanPath.includes("/.") ||
+    (process.env.BITRIX_CONFIG_FILE && filePath === path.resolve(process.env.BITRIX_CONFIG_FILE)) ||
     ["/server.js", "/package.json", "/templates/contracts-registry.json"].includes(cleanPath)
   ) {
     res.writeHead(403);
@@ -506,7 +577,10 @@ const server = http.createServer(async (req, res) => {
   try {
     await ensureData();
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-    if (url.pathname.startsWith("/api/")) await handleApi(req, res, url);
+    if (url.pathname.startsWith("/api/")) {
+      if (["POST", "PUT", "DELETE", "PATCH"].includes(req.method) && url.pathname !== "/api/payouts") await serializeMutation(() => handleApi(req, res, url));
+      else await handleApi(req, res, url);
+    }
     else await handleStatic(req, res, url.pathname);
   } catch (error) {
     if (error.code === "ENOENT") {

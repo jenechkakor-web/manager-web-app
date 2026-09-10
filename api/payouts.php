@@ -11,6 +11,7 @@ function payout_valid_date($value)
 }
 function payout_eligible($record)
 {
+    if (!empty($record['registryMeta']['bitrix'])) return $record['registryMeta']['bitrix']['dealStatus'] === 'Завершена';
     return $record && $record['registryMeta']['paymentStatus'] === 'Да'
         && $record['registryMeta']['closingDocs'] === 'Отправлены'
         && payout_cents($record['registryMeta']['prepayment']) >= payout_cents($record['amount']);
@@ -184,8 +185,9 @@ function payout_build_report(array $records, array $users, array $ledger, array 
         if (!$inScope($record['ownerId'])) continue;
         $common = ['managerId' => $record['ownerId'], 'manager' => payout_value($names, $record['ownerId'], 'Удалённый пользователь'),
             'number' => $record['number'], 'title' => $record['registryMeta']['title'] ?: ($record['counterparty'] ?: 'Без названия')];
-        $planned = !in_array($record['registryMeta']['paymentStatus'], ['Да', 'Предоплата'], true);
-        $complete = $record['registryMeta']['paymentStatus'] === 'Да'
+        $crm = payout_value($record['registryMeta'], 'bitrix');
+        $planned = $crm ? $crm['dealStatus'] === 'Планируется' : !in_array($record['registryMeta']['paymentStatus'], ['Да', 'Предоплата'], true);
+        $complete = $crm ? $crm['dealStatus'] === 'Завершена' : $record['registryMeta']['paymentStatus'] === 'Да'
             && payout_cents($record['registryMeta']['prepayment']) >= payout_cents($record['amount'])
             && in_array($record['registryMeta']['closingDocs'], ['Отправлены', 'Не нужно'], true);
         $entries[] = array_merge($common, ['id' => 'sale:' . $record['number'], 'kind' => 'sale', 'date' => $record['date'],

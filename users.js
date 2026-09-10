@@ -1,5 +1,6 @@
 const createUserForm = document.querySelector("#createUserForm");
 const newUserLogin = document.querySelector("#newUserLogin");
+const newUserFullName = document.querySelector("#newUserFullName");
 const newUserPassword = document.querySelector("#newUserPassword");
 const newUserRole = document.querySelector("#newUserRole");
 const createUserButton = document.querySelector("#createUserButton");
@@ -57,6 +58,13 @@ function renderUsers() {
             <strong>${escapeHtml(user.login)}</strong>
             <small>${isCurrent ? "Текущая учётная запись" : `Создан ${escapeHtml(formatDate(user.createdAt))}`}</small>
           </div>
+          <div class="user-profile-action">
+            <label>
+              <span>ФИО</span>
+              <input data-user-full-name maxlength="191" autocomplete="off" placeholder="Имя Фамилия, как в Б24" value="${escapeHtml(user.fullName)}" />
+            </label>
+            <button class="button ghost" type="button" data-save-profile>Сохранить ФИО</button>
+          </div>
           <label>
             <span>Права</span>
             <select data-user-role${isCurrent ? " disabled" : ""}>
@@ -97,6 +105,7 @@ createUserForm.addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify({
         login: newUserLogin.value.trim(),
+        fullName: newUserFullName.value.trim(),
         password: newUserPassword.value,
         role: newUserRole.value,
       }),
@@ -128,6 +137,21 @@ usersList.addEventListener("change", async (event) => {
 });
 
 usersList.addEventListener("click", async (event) => {
+  const profileButton = event.target.closest("[data-save-profile]");
+  if (profileButton) {
+    const row = profileButton.closest("[data-user-id]");
+    const input = row.querySelector("[data-user-full-name]");
+    profileButton.disabled = true;
+    try {
+      users = await apiRequest({ method: "PUT", body: JSON.stringify({ action: "profile", id: Number(row.dataset.userId), fullName: input.value.trim() }) });
+      setUsersStatus("ФИО сохранено. Оно используется для связи с Битрикс24.", "success");
+    } catch (error) {
+      setUsersStatus(error.message, "error");
+    } finally {
+      profileButton.disabled = false;
+    }
+    return;
+  }
   const passwordButton = event.target.closest("[data-change-password]");
   if (passwordButton) {
     const row = passwordButton.closest("[data-user-id]");

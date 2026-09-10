@@ -15,6 +15,7 @@ function validDate(value) {
 }
 
 function isEligible(record) {
+  if (record?.registryMeta?.bitrix) return record.registryMeta.bitrix.dealStatus === 'Завершена';
   return Boolean(record && record.registryMeta.paymentStatus === 'Да' && record.registryMeta.closingDocs === 'Отправлены'
     && cents(record.registryMeta.prepayment) >= cents(record.amount));
 }
@@ -63,8 +64,9 @@ function buildReport(records, users, ledger, user, query, deletedIds = []) {
   const entries = visibleRecords.flatMap(record => {
     const common = { managerId: record.ownerId, manager: names.get(record.ownerId) || 'Удалённый пользователь',
       number: record.number, title: record.registryMeta.title || record.counterparty || 'Без названия' };
-    const planned = !['Да', 'Предоплата'].includes(record.registryMeta.paymentStatus);
-    const complete = record.registryMeta.paymentStatus === 'Да'
+    const crm = record.registryMeta.bitrix;
+    const planned = crm ? crm.dealStatus === 'Планируется' : !['Да', 'Предоплата'].includes(record.registryMeta.paymentStatus);
+    const complete = crm ? crm.dealStatus === 'Завершена' : record.registryMeta.paymentStatus === 'Да'
       && cents(record.registryMeta.prepayment) >= cents(record.amount)
       && ['Отправлены', 'Не нужно'].includes(record.registryMeta.closingDocs);
     const sale = { ...common, id: `sale:${record.number}`, kind: 'sale', date: record.date,
@@ -82,8 +84,7 @@ function buildReport(records, users, ledger, user, query, deletedIds = []) {
     counterparty: record.counterparty || '', dealAmount: record.amount,
     reason: record.registryMeta.bonusType, revenue: 0,
     accrued: bonusCents(record), paid: 0,
-    eligible: record.registryMeta.paymentStatus === 'Да' && record.registryMeta.closingDocs === 'Отправлены'
-      && cents(record.registryMeta.prepayment) >= cents(record.amount),
+    eligible: isEligible(record),
     paymentStatus: record.registryMeta.paymentStatus, closingDocs: record.registryMeta.closingDocs,
   }];
   }).concat(visibleLedger.map(entry => ({

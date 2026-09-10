@@ -118,6 +118,7 @@ function hasPaymentRemainder(record, prepayment = record.registryMeta?.prepaymen
 }
 
 function dealBucket(record) {
+  if (record.registryMeta?.bitrix) return ({ "Завершена": "closed", "В работе": "active" })[record.registryMeta.bitrix.dealStatus] || "planned";
   const { paymentStatus, closingDocs } = record.registryMeta || {};
   const closingComplete = closingDocs === "Отправлены" || closingDocs === "Не нужно";
   if (paymentStatus === "Да" && !hasPaymentRemainder(record) && closingComplete) return "closed";
@@ -285,10 +286,11 @@ function renderFilterOptions() {
   const selectedManager = managerFilter.value;
   const selectedSource = sourceFilter.value;
   const managers = [...new Set(records.map(managerName))].sort((a, b) => a.localeCompare(b, "ru"));
-  const sourceOptions = [
+  const sourceOptions = [...new Set([
     ...(records.some((record) => !record.registryMeta?.source) ? [EMPTY_SOURCE_FILTER] : []),
     ...window.ContractRegistry.SOURCE_OPTIONS,
-  ];
+    ...records.map(record => record.registryMeta?.source).filter(Boolean),
+  ])];
   managerFilter.innerHTML = [
     '<option value="">Все менеджеры</option>',
     ...managers.map((manager) => `<option value="${escapeHtml(manager)}">${escapeHtml(manager)}</option>`),

@@ -45,6 +45,10 @@
                   <input id="newUserPassword" name="new-account-password" type="password" autocomplete="new-password" minlength="8" data-1p-ignore data-lpignore="true" required />
                 </label>
                 <label>
+                  <span>ФИО</span>
+                  <input id="newUserFullName" name="new-account-full-name" autocomplete="off" maxlength="191" placeholder="Имя Фамилия, как в Б24" />
+                </label>
+                <label>
                   <span>Права</span>
                   <select id="newUserRole">
                     <option value="user">Пользователь</option>
@@ -58,6 +62,7 @@
 
             <section class="panel">
               <div class="panel-title"><h2>Список пользователей</h2></div>
+              <p class="field-hint">Для связи с Битрикс24 укажите имя и фамилию, как в профиле сотрудника. Сделки закрепляются за их создателями.</p>
               <div class="users-list" id="usersList"></div>
             </section>
           </section>
@@ -65,6 +70,6 @@
       </section>
     </main>
     <script src="auth.js?v=20260702-deals-prod-1"></script>
-    <script src="users.js?v=20260619-passwords-1"></script>
+    <script src="users.js?v=20260910-bitrix-1"></script>
   </body>
 </html>

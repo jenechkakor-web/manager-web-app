@@ -1,3 +1,4 @@
 api/config.local.php
 api/dadata.local.php
+api/bitrix.local.php
 .data/

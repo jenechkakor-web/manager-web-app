@@ -51,7 +51,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p deploy-api deploy-public
-          cp api/.htaccess api/config.php api/config.local.example.php api/dadata-client.php api/dadata.local.example.php api/index.php api/payouts.php deploy-api/
+          cp api/.htaccess api/config.php api/config.local.example.php api/dadata-client.php api/dadata.local.example.php api/index.php api/payouts.php api/bitrix.php api/bitrix-rules.json api/bitrix.local.example.php deploy-api/
           printf "<?php\n\nreturn ['dadata_token' => '%s'];\n" "$DADATA_API_TOKEN" > deploy-api/dadata.local.php
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -188,7 +188,7 @@ jobs:
           get /schet_dogovor_template.docx -o backup-live/schet_dogovor_template.docx
           get /schet_dogovor_zamery_template.docx -o backup-live/schet_dogovor_zamery_template.docx
           mirror --verbose --parallel=1 /assets backup-live/assets
-          mirror --verbose --parallel=1 --exclude-glob config.local.php --exclude-glob dadata.local.php /api backup-live/api
+          mirror --verbose --parallel=1 --exclude-glob config.local.php --exclude-glob dadata.local.php --exclude-glob bitrix.local.php /api backup-live/api
           mirror --verbose --parallel=1 /templates backup-live/templates
           bye
           LFTP_COMMANDS
@@ -249,6 +249,9 @@ jobs:
           }
 
           upload_core_file deploy-api/payouts.php /api/payouts.php
+          upload_core_file deploy-api/bitrix.php /api/bitrix.php
+          upload_core_file deploy-api/bitrix-rules.json /api/bitrix-rules.json
+          upload_core_file deploy-api/bitrix.local.example.php /api/bitrix.local.example.php
           # Upload the entry point to a temporary name and rename only after transfer completes.
           upload_core_file deploy-api/index.php /api/index.next.php
           curl --fail --show-error --silent --ftp-ssl-control \
@@ -272,7 +275,7 @@ jobs:
             fi
 
             echo "API health check failed on attempt $attempt; uploading API again."
-            for source in deploy-api/.htaccess deploy-api/payouts.php deploy-api/config.php; do
+            for source in deploy-api/.htaccess deploy-api/payouts.php deploy-api/bitrix.php deploy-api/bitrix-rules.json deploy-api/config.php; do
               destination="api/$(basename "$source")"
               curl --fail --show-error --silent --ftp-ssl-control \
                 --user "$FTP_USERNAME:$FTP_PASSWORD" \
@@ -402,7 +405,7 @@ jobs:
         run: |
           set -euo pipefail
           # Restore only application files, never SQL/JSON data or server credentials.
-          for relative in api/index.php api/.htaccess api/config.php .htaccess index.html login.html registry.html dashboard.html library.html users.html app.js auth.js login.js registry-storage-sync.js registry.js dashboard.js library.js users.js styles.css payouts.html payouts.js payouts-table.js payouts.css; do
+          for relative in api/index.php api/.htaccess api/config.php api/payouts.php api/bitrix.php api/bitrix-rules.json .htaccess index.html login.html registry.html dashboard.html library.html users.html app.js auth.js login.js registry-storage-sync.js registry.js dashboard.js library.js users.js styles.css payouts.html payouts.js payouts-table.js payouts.css; do
             if [[ -f "backup-live/$relative" ]]; then
               curl --fail --show-error --silent --ftp-ssl-control \
                 --user "$FTP_USERNAME:$FTP_PASSWORD" --ftp-create-dirs --connect-timeout 15 --max-time 90 \

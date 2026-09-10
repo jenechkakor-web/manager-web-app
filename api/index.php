@@ -4,6 +4,7 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 require_once __DIR__ . '/payouts.php';
+require_once __DIR__ . '/bitrix.php';
 
 function respond($payload, $status = 200)
 {
@@ -84,6 +85,10 @@ function initialize_database(PDO $pdo, array $config)
         UNIQUE KEY unique_login (login)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+    if (!has_column($pdo, 'manager_users', 'full_name')) {
+        $pdo->exec("ALTER TABLE manager_users ADD COLUMN full_name VARCHAR(191) NOT NULL DEFAULT ''");
+    }
+
     $adminLogin = trim((string) $config['admin_login']);
     $statement = $pdo->prepare('SELECT id FROM manager_users WHERE login = :login LIMIT 1');
     $statement->execute([':login' => $adminLogin]);
@@ -157,6 +162,7 @@ function public_user(array $row)
     return [
         'id' => (int) $row['id'],
         'login' => (string) $row['login'],
+        'fullName' => isset($row['full_name']) ? (string) $row['full_name'] : '',
         'role' => $row['role'] === 'admin' ? 'admin' : 'user',
         'createdAt' => isset($row['created_at']) ? (string) $row['created_at'] : '',
     ];
@@ -168,7 +174,7 @@ function current_user(PDO $pdo)
     if ($userId === 0) {
         return null;
     }
-    $statement = $pdo->prepare('SELECT id, login, role, created_at FROM manager_users WHERE id = :id LIMIT 1');
+    $statement = $pdo->prepare('SELECT id, login, full_name, role, created_at FROM manager_users WHERE id = :id LIMIT 1');
     $statement->execute([':id' => $userId]);
     $row = $statement->fetch();
     if (!$row) {
@@ -224,7 +230,8 @@ function normalize_registry_meta(array $record, array $data, $amount)
         : round_money(max(0, min((float) $amount, (float) $rawPrepayment)));
     return [
         'title' => trim((string) (isset($source['title']) ? $source['title'] : '')),
-        'source' => normalize_choice(isset($source['source']) ? $source['source'] : '', ['Директ', 'Агент', 'Повтор', 'Сарафан', 'Авито', 'Парсинг', 'SEO', 'Профи.ру'], ''),
+        'source' => bitrix_text(bitrix_value($source, 'source')),
+        'bitrix' => isset($source['bitrix']) && is_array($source['bitrix']) ? $source['bitrix'] : null,
         'paymentStatus' => normalize_choice(isset($source['paymentStatus']) ? $source['paymentStatus'] : '', ['Да', 'Предоплата', 'Планируется'], 'Планируется'),
         'prepayment' => $prepayment,
         'prepaymentOverridden' => isset($source['prepaymentOverridden']) && $source['prepaymentOverridden'] === true,
@@ -376,13 +383,14 @@ function fetch_record(PDO $pdo, array $user, $number)
     return $row ? record_from_database_row($row, true) : null;
 }
 
-function save_record(PDO $pdo, array $record, array $user)
+function save_record(PDO $pdo, array $record, array $user, $fromBitrix = false)
 {
     $ownerStatement = $pdo->prepare('SELECT * FROM manager_contracts WHERE record_number = :number LIMIT 1 FOR UPDATE');
     $ownerStatement->execute([':number' => $record['number']]);
     $existingRow = $ownerStatement->fetch();
     $existingOwner = $existingRow ? $existingRow['owner_id'] : false;
     $previous = $existingRow ? record_from_database_row($existingRow, false) : null;
+    if (!$fromBitrix) $record = bitrix_preserve_fields($record, $previous);
     if ($existingOwner !== false && $user['role'] !== 'admin' && (int) $existingOwner !== $user['id']) {
         respond(['error' => 'Нельзя изменить договор другого пользователя.'], 403);
     }
@@ -460,7 +468,7 @@ function import_initial_presets(PDO $pdo)
 
 function fetch_users(PDO $pdo)
 {
-    $rows = $pdo->query('SELECT id, login, role, created_at FROM manager_users ORDER BY login')->fetchAll();
+    $rows = $pdo->query('SELECT id, login, full_name, role, created_at FROM manager_users ORDER BY login')->fetchAll();
     return array_map('public_user', $rows);
 }
 
@@ -469,11 +477,30 @@ function validate_login($login)
     return preg_match('/^[A-Za-z0-9._-]{3,64}$/', $login) === 1;
 }
 
+function validate_full_name($value)
+{
+    if (!is_string($value) || preg_match('/[\x00-\x1f\x7f]/', $value) || preg_match_all('/./us', $value) > 191) {
+        respond(['error' => 'ФИО: не более 191 символа, без управляющих символов.'], 400);
+    }
+    return trim(preg_replace('/\s+/u', ' ', $value));
+}
+
 // CLI-only entry for isolated tests; never changes HTTP authentication.
 if (PHP_SAPI === 'cli' && defined('MANAGER_API_TEST_MODE')) return;
 
 try {
     $config = require __DIR__ . '/config.php';
+    $route = trim(isset($_GET['route']) ? (string) $_GET['route'] : '', '/');
+    $method = strtoupper(isset($_SERVER['REQUEST_METHOD']) ? (string) $_SERVER['REQUEST_METHOD'] : 'GET');
+    if ($route === 'bitrix/events') {
+        if ($method !== 'POST') respond(['error' => 'Метод не поддерживается.'], 405);
+        $bitrixConfig = bitrix_value($config, 'bitrix', []);
+        $dealId = bitrix_authenticate(bitrix_request_event(), $bitrixConfig);
+        if ($dealId === null) respond(['skipped' => 'unsupported_event']);
+        $pdo = open_database($config);
+        initialize_database($pdo, $config);
+        respond(bitrix_sync($pdo, $bitrixConfig, $dealId));
+    }
     $secureCookie = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
     session_name(isset($config['session_name']) ? (string) $config['session_name'] : 'manager_app_session');
     session_set_cookie_params(0, '/', '', $secureCookie, true);
@@ -485,13 +512,23 @@ try {
     $method = strtoupper(isset($_SERVER['REQUEST_METHOD']) ? (string) $_SERVER['REQUEST_METHOD'] : 'GET');
 
     if ($route === 'health' && $method === 'GET') {
-        respond(['ok' => true, 'database' => true, 'payouts' => true]);
+        respond(['ok' => true, 'database' => true, 'payouts' => true, 'bitrix' => true]);
+    }
+    if ($route === 'bitrix/status' && $method === 'GET') {
+        require_admin($pdo);
+        respond(bitrix_configuration_status(bitrix_value($config, 'bitrix', []), fetch_users($pdo)));
+    }
+    if ($route === 'bitrix/sync' && $method === 'POST') {
+        require_same_origin();
+        require_admin($pdo);
+        session_write_close();
+        respond(bitrix_sync($pdo, bitrix_value($config, 'bitrix', []), bitrix_value(request_json(), 'dealId')));
     }
     if ($route === 'auth/login' && $method === 'POST') {
         require_same_origin();
         $body = request_json();
         $login = trim(isset($body['login']) ? (string) $body['login'] : '');
-        $statement = $pdo->prepare('SELECT id, login, password_hash, role, created_at FROM manager_users WHERE login = :login LIMIT 1');
+        $statement = $pdo->prepare('SELECT id, login, full_name, password_hash, role, created_at FROM manager_users WHERE login = :login LIMIT 1');
         $statement->execute([':login' => $login]);
         $row = $statement->fetch();
         $loginPassword = isset($body['password']) ? (string) $body['password'] : '';
@@ -542,6 +579,7 @@ try {
         $login = trim(isset($body['login']) ? (string) $body['login'] : '');
         $password = isset($body['password']) ? (string) $body['password'] : '';
         $role = (isset($body['role']) ? $body['role'] : '') === 'admin' ? 'admin' : 'user';
+        $fullName = validate_full_name(bitrix_value($body, 'fullName'));
         if (!validate_login($login)) {
             respond(['error' => 'Логин: 3–64 символа, латинские буквы, цифры, точка, дефис или подчёркивание.'], 400);
         }
@@ -549,10 +587,11 @@ try {
             respond(['error' => 'Пароль должен содержать не менее 8 символов.'], 400);
         }
         try {
-            $statement = $pdo->prepare('INSERT INTO manager_users (login, password_hash, role, created_at)
-                VALUES (:login, :password_hash, :role, :created_at)');
+            $statement = $pdo->prepare('INSERT INTO manager_users (login, full_name, password_hash, role, created_at)
+                VALUES (:login, :full_name, :password_hash, :role, :created_at)');
             $statement->execute([
                 ':login' => $login,
+                ':full_name' => $fullName,
                 ':password_hash' => password_hash($password, PASSWORD_DEFAULT),
                 ':role' => $role,
                 ':created_at' => gmdate('c'),
@@ -572,6 +611,15 @@ try {
         $userId = isset($body['id']) ? (int) $body['id'] : 0;
         if ($userId === 0) {
             respond(['error' => 'Пользователь не найден.'], 404);
+        }
+        if (bitrix_value($body, 'action') === 'profile') {
+            $fullName = validate_full_name(bitrix_value($body, 'fullName'));
+            $statement = $pdo->prepare('SELECT id FROM manager_users WHERE id = ?');
+            $statement->execute([$userId]);
+            if (!$statement->fetch()) respond(['error' => 'Пользователь не найден.'], 404);
+            $statement = $pdo->prepare('UPDATE manager_users SET full_name = ? WHERE id = ?');
+            $statement->execute([$fullName, $userId]);
+            respond(fetch_users($pdo));
         }
         if ((isset($body['action']) ? $body['action'] : '') === 'password') {
             $password = isset($body['password']) ? (string) $body['password'] : '';
@@ -671,7 +719,7 @@ try {
         if ((isset($body['action']) ? $body['action'] : '') === 'update-meta') {
             $number = trim(isset($body['number']) ? (string) $body['number'] : '');
             $pdo->beginTransaction();
-            $statement = $pdo->prepare('SELECT owner_id, amount, data_json, registry_meta_json
+            $statement = $pdo->prepare('SELECT *
                 FROM manager_contracts WHERE record_number = :number LIMIT 1 FOR UPDATE');
             $statement->execute([':number' => $number]);
             $row = $statement->fetch();
@@ -683,8 +731,7 @@ try {
             }
             $data = json_decode((string) $row['data_json'], true);
             $currentMeta = json_decode(isset($row['registry_meta_json']) ? (string) $row['registry_meta_json'] : '', true);
-            $previous = ['amount' => (float) $row['amount'], 'registryMeta' => normalize_registry_meta(
-                ['registryMeta' => is_array($currentMeta) ? $currentMeta : []], is_array($data) ? $data : [], (float) $row['amount'])];
+            $previous = record_from_database_row($row, false);
             $fields = isset($body['fields']) && is_array($body['fields']) ? $body['fields'] : [];
             if ($previous['registryMeta']['paymentStatus'] === 'Предоплата' && payout_value($fields, 'paymentStatus') === 'Да') {
                 $fields['prepayment'] = (float) $row['amount'];
@@ -698,6 +745,8 @@ try {
                 is_array($data) ? $data : [],
                 (float) $row['amount']
             );
+            $protected = bitrix_preserve_fields(['registryMeta' => $registryMeta], $previous);
+            $registryMeta = $protected['registryMeta'];
             assert_paid_status_has_no_remainder($registryMeta, (float) $row['amount']);
             $updatedAt = gmdate('c');
             $statement = $pdo->prepare('UPDATE manager_contracts
@@ -779,6 +828,9 @@ try {
         respond($presets);
     }
     respond(['error' => 'Метод или адрес API не найден.'], 404);
+} catch (BitrixException $error) {
+    if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+    respond(['error' => $error->getMessage()], $error->getCode() ?: 502);
 } catch (Exception $error) {
     error_log($error->getMessage());
     respond(['error' => 'Серверная часть приложения еще не настроена.'], 503);
