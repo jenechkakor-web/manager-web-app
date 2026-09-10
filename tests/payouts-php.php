@@ -46,6 +46,18 @@ check($report['totals']['revenue'] == 20000 && $report['totals']['planned'] == 1
 check($report['managerTotals'][0]['planned'] == 10000 && $report['allTime']['accrued'] == 1200, 'Manager totals and unchanged bonuses');
 check(payout_build_report($rows, $users, [], $admin, ['manager'=>'3'])['totals']['planned'] == 0, 'Planned manager filter');
 check(payout_build_report($rows, $users, [], $manager, ['from'=>'2026-07-01'])['totals']['planned'] == 0, 'Planned date filter');
+$paidWithoutDocs = $record; $paidWithoutDocs['number'] = 'PAID'; $paidWithoutDocs['registryMeta']['closingDocs'] = 'Не отправлены';
+$notNeeded = $record; $notNeeded['number'] = 'NOT_NEEDED'; $notNeeded['registryMeta']['closingDocs'] = 'Не нужно';
+$workSalary = $paidWithoutDocs; $workSalary['number'] = 'SALARY'; $workSalary['registryMeta']['bonusType'] = 'оклад';
+$workProfit = $paidWithoutDocs; $workProfit['number'] = 'PROFIT'; $workProfit['registryMeta']['bonusType'] = 'от прибыли';
+$otherWork = $paidWithoutDocs; $otherWork['number'] = 'OTHER_WORK'; $otherWork['ownerId'] = 3;
+$workRows = [$record, $planned, $active, $paidWithoutDocs, $notNeeded, $workSalary, $workProfit, $otherWork];
+$workReport = payout_build_report($workRows, $users, [], $manager, ['month'=>'2026-06','manager'=>'3']);
+check($workReport['totals']['workingBonus'] == 2650, 'Expected bonuses include only in-progress deals');
+check($workReport['totals']['accrued'] == 0 && $workReport['allTime']['balance'] == 1200, 'Expected bonuses do not increase payable balance');
+check(payout_build_report($workRows, $users, [], $admin, ['manager'=>'3'])['totals']['workingBonus'] == 1200, 'In-progress bonuses scoped to manager');
+check(payout_build_report($workRows, $users, [], $manager, ['from'=>'2026-07-01'])['totals']['workingBonus'] == 0, 'In-progress bonuses filtered by contract date');
+check(payout_build_report($workRows, $users, [], $manager, [], ['deal:PAID'])['totals']['workingBonus'] == 1450, 'Cancelled bonuses excluded');
 echo "PHP payout calculations passed\n";
 
 if (!getenv('PAYOUT_TEST_MYSQL')) exit;

@@ -60,6 +60,26 @@ test('планируемые отдельно от выручки, с датам
   assert.equal(buildReport(rows,users,[],manager,new URLSearchParams('from=2026-07-01')).totals.planned,0);
 });
 
+test('ожидаемые бонусы только по сделкам в работе, по дате договора и с учётом отмен', () => {
+  const rows = [
+    record(),
+    record({number:'PLANNED',registryMeta:{...record().registryMeta,paymentStatus:'Планируется'}}),
+    record({number:'PREPAID',registryMeta:{...record().registryMeta,paymentStatus:'Предоплата',prepayment:1000}}),
+    record({number:'PAID',registryMeta:{...record().registryMeta,closingDocs:'Не отправлены'}}),
+    record({number:'NOT_NEEDED',registryMeta:{...record().registryMeta,closingDocs:'Не нужно'}}),
+    record({number:'SALARY',registryMeta:{...record().registryMeta,closingDocs:'Не отправлены',bonusType:'оклад'}}),
+    record({number:'PROFIT',registryMeta:{...record().registryMeta,closingDocs:'Не отправлены',bonusType:'от прибыли'}}),
+    record({number:'OTHER',ownerId:3,registryMeta:{...record().registryMeta,closingDocs:'Не отправлены'}}),
+  ];
+  const report=buildReport(rows,users,[],manager,new URLSearchParams('month=2026-06&manager=3'));
+  assert.equal(report.totals.workingBonus,2650);
+  assert.equal(report.totals.accrued,0);
+  assert.equal(report.allTime.balance,1200,'Expected bonuses do not change payable balance');
+  assert.equal(buildReport(rows,users,[],admin,new URLSearchParams('manager=3')).totals.workingBonus,1200);
+  assert.equal(buildReport(rows,users,[],manager,new URLSearchParams('from=2026-07-01')).totals.workingBonus,0);
+  assert.equal(buildReport(rows,users,[],manager,new URLSearchParams(),['deal:PAID']).totals.workingBonus,1450);
+});
+
 test('дата условий сохраняется и меняется только при новом выполнении условий', () => {
   const pending = record({registryMeta:{...record().registryMeta,closingDocs:'Не отправлены'}});
   const qualified = stampQualification(record(),pending);

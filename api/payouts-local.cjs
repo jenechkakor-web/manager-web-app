@@ -26,9 +26,11 @@ function stampQualification(record, previous) {
 }
 
 function bonusCents(record) {
+  return isEligible(record) ? expectedBonusCents(record) : 0;
+}
+
+function expectedBonusCents(record) {
   const meta = record.registryMeta;
-  if (meta.paymentStatus !== 'Да' || meta.closingDocs !== 'Отправлены'
-      || cents(meta.prepayment) < cents(record.amount)) return 0;
   if (meta.bonusType === 'оклад') return 0;
   if (meta.bonusType === 'от прибыли') return cents(meta.bonusAmount);
   const percent = { '12%': 12, '10%': 10, '7%': 7, '5%': 5, '4%': 4, '3%': 3 }[meta.bonusType] || 0;
@@ -62,9 +64,14 @@ function buildReport(records, users, ledger, user, query, deletedIds = []) {
     const common = { managerId: record.ownerId, manager: names.get(record.ownerId) || 'Удалённый пользователь',
       number: record.number, title: record.registryMeta.title || record.counterparty || 'Без названия' };
     const planned = !['Да', 'Предоплата'].includes(record.registryMeta.paymentStatus);
+    const complete = record.registryMeta.paymentStatus === 'Да'
+      && cents(record.registryMeta.prepayment) >= cents(record.amount)
+      && ['Отправлены', 'Не нужно'].includes(record.registryMeta.closingDocs);
     const sale = { ...common, id: `sale:${record.number}`, kind: 'sale', date: record.date,
       reason: 'Сумма сделки', revenue: planned ? 0 : cents(record.amount),
-      planned: planned ? cents(record.amount) : 0, accrued: 0, paid: 0 };
+      planned: planned ? cents(record.amount) : 0,
+      workingBonus: !planned && !complete && !deleted.has(`deal:${record.number}`) ? expectedBonusCents(record) : 0,
+      accrued: 0, paid: 0 };
     if (!isEligible(record) || deleted.has(`deal:${record.number}`)) return [sale];
     const accruedDate = record.bonusQualifiedAt
       ? new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Moscow' }).format(new Date(record.bonusQualifiedAt)) : '';
@@ -89,12 +96,13 @@ function buildReport(records, users, ledger, user, query, deletedIds = []) {
   const sum = rows => rows.reduce((total, entry) => {
     total.revenue += entry.revenue;
     total.planned += entry.planned || 0;
+    total.workingBonus += entry.workingBonus || 0;
     total.accrued += entry.accrued;
     total.paid += entry.paid;
     return total;
-  }, { revenue: 0, planned: 0, accrued: 0, paid: 0 });
+  }, { revenue: 0, planned: 0, workingBonus: 0, accrued: 0, paid: 0 });
   const serialize = total => ({ revenue: rubles(total.revenue), planned: rubles(total.planned), accrued: rubles(total.accrued),
-    paid: rubles(total.paid), balance: rubles(total.accrued - total.paid) });
+    workingBonus: rubles(total.workingBonus), paid: rubles(total.paid), balance: rubles(total.accrued - total.paid) });
   const selected = entries.filter(entry => (!(from || to) || entry.date) && (!from || entry.date >= from) && (!to || entry.date <= to));
   const opening = from ? sum(entries.filter(entry => entry.date && entry.date < from)) : sum([]);
   const period = sum(selected);
@@ -110,7 +118,7 @@ function buildReport(records, users, ledger, user, query, deletedIds = []) {
       ...serialize(sum(selected.filter(entry => entry.managerId === id))),
       allTimeBalance: serialize(sum(entries.filter(entry => entry.managerId === id))).balance })),
     entries: selected.sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id)).map(entry => ({
-      ...entry, revenue: rubles(entry.revenue), planned: rubles(entry.planned || 0), accrued: rubles(entry.accrued), paid: rubles(entry.paid),
+      ...entry, revenue: rubles(entry.revenue), planned: rubles(entry.planned || 0), workingBonus: rubles(entry.workingBonus || 0), accrued: rubles(entry.accrued), paid: rubles(entry.paid),
     })),
   };
 }
