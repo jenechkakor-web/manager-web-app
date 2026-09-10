@@ -2114,6 +2114,18 @@ fieldset {
   background: #fbfcfc;
 }
 
+.bitrix-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+  align-items: end;
+}
+
+#bitrixManagers { margin: 12px 0; line-height: 1.8; }
+#bitrixSyncForm { margin-top: 20px; }
+.users-content code { overflow-wrap: anywhere; }
+
 @media (max-width: 1200px) {
   .registry-filters {
     grid-template-columns: repeat(3, minmax(145px, 1fr));

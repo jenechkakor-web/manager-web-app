@@ -3,8 +3,8 @@
 return [
     'webhookUrl' => 'https://verkup.bitrix24.ru/rest/USER_ID/INCOMING_TOKEN/',
     'eventToken' => 'OUTGOING_APPLICATION_TOKEN',
-    // Actual total money received (advance + subsequent payments), not a planned percentage.
-    'paidAmountField' => '',
+    // Portal rule: empty advance = full payment; equal to OPPORTUNITY = full payment.
+    'paidAmountField' => 'UF_CRM_1547663414463',
     // Optional full-payment checkbox/list and its exact stored values.
     'fullPaymentField' => '',
     'fullPaymentValues' => ['Y', '1', 'Да'],

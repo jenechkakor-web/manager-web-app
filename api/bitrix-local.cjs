@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
+const path = require('node:path');
 const rules = require('./bitrix-rules.json');
 const fail = (message, status = 502) => Object.assign(new Error(message), { status });
 const label = value => String(value || '').trim().replace(/\s+/gu, ' ').toLocaleLowerCase('ru').replaceAll('ё', 'е');
@@ -130,7 +131,8 @@ function mapSnapshot(snapshot, config, users, previous = null) {
   if (config.paidAmountField) {
     if (!Object.hasOwn(deal, config.paidAmountField)) throw fail('Б24: поле фактической оплаты отсутствует.');
     const value = deal[config.paidAmountField];
-    paid = value === '' || value === null ? 0 : money(value);
+    // Portal convention: an empty advance field means the entire deal is paid.
+    paid = value === '' || value === null || value === false ? amount : money(value);
   }
   if (config.fullPaymentField) {
     if (!Object.hasOwn(deal, config.fullPaymentField)) throw fail('Б24: поле полной оплаты отсутствует.');
@@ -142,7 +144,7 @@ function mapSnapshot(snapshot, config, users, previous = null) {
   if (!number || number.length > 191) throw fail('Б24: номер сделки отсутствует или слишком длинный.');
   const registryMeta = { ...(previous?.registryMeta || {}), title: text(deal.TITLE),
     source: text(config.sourceMap?.[deal.SOURCE_ID] || source),
-    paymentStatus: dealStatus === 'Планируется' ? 'Планируется' : (amount > 0 && paid >= amount ? 'Да' : paid > 0 ? 'Предоплата' : 'Планируется'),
+    paymentStatus: dealStatus === 'Планируется' ? 'Планируется' : (config.paidAmountField || config.fullPaymentField ? (paid >= amount ? 'Да' : 'Предоплата') : 'Планируется'),
     prepayment: paid, prepaymentOverridden: true,
     bitrix: { dealId: id(deal.ID), domain: endpoint(config).hostname, creatorId: id(deal.CREATED_BY_ID),
       stageId: text(deal.STAGE_ID), stageName, dealStatus, unmappedStage: !status, modifiedAt, number,
@@ -159,16 +161,41 @@ function preserveCrmFields(incoming, previous) {
   return incoming;
 }
 
-async function loadConfig() {
-  if (!process.env.BITRIX_CONFIG_FILE) return {};
-  try { return JSON.parse(await fs.readFile(process.env.BITRIX_CONFIG_FILE, 'utf8')); }
-  catch { throw fail('Не удалось прочитать закрытую конфигурацию Б24.', 503); }
+function configFile(dataDir) { return process.env.BITRIX_CONFIG_FILE || path.join(dataDir, 'bitrix.local.json'); }
+async function loadConfig(dataDir) {
+  try { return JSON.parse(await fs.readFile(configFile(dataDir), 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return {}; throw fail('Не удалось прочитать закрытую конфигурацию Б24.', 503); }
+}
+
+function updatedConfig(previous, body) {
+  const config = {...previous};
+  for (const key of ['webhookUrl','eventToken','paidAmountField','fullPaymentField','numberField']) {
+    if (!Object.hasOwn(body,key)) continue;
+    if (typeof body[key] !== 'string' || body[key].length > 2048) throw fail('Некорректные настройки Б24.',400);
+    if (['webhookUrl','eventToken'].includes(key) && !body[key].trim()) continue;
+    config[key] = body[key].trim();
+  }
+  endpoint(config);
+  if (!text(config.eventToken)) throw fail('Укажите токен исходящего вебхука.',400);
+  for (const key of ['paidAmountField','fullPaymentField','numberField']) {
+    if (config[key] && !/^[A-Z][A-Z0-9_]{0,100}$/.test(config[key])) throw fail('Некорректный код поля Б24.',400);
+  }
+  return config;
+}
+
+async function saveConfig(dataDir, config) {
+  const file = configFile(dataDir), temporary = `${file}.${crypto.randomUUID()}.tmp`;
+  await fs.mkdir(path.dirname(file),{recursive:true});
+  await fs.writeFile(temporary,JSON.stringify(config),{mode:0o600});
+  await fs.rename(temporary,file);
 }
 
 function configurationStatus(config, users) {
   let configured = false;
   try { endpoint(config); configured = Boolean(text(config.eventToken)); } catch {}
-  return { configured, paymentConfigured: Boolean(config.paidAmountField || config.fullPaymentField),
+  return { configured, domain: configured ? endpoint(config).hostname : '',
+    paidAmountField: config.paidAmountField || '', fullPaymentField: config.fullPaymentField || '', numberField: config.numberField || '',
+    paymentConfigured: Boolean(config.paidAmountField || config.fullPaymentField),
     managers: rules.managers.map(name => {
       const binding = config.managers?.[name];
       const configuredLogin = typeof binding === 'string' ? binding : binding?.login;
@@ -178,4 +205,4 @@ function configurationStatus(config, users) {
 }
 
 module.exports = { rules, stageStatus, resolveManager, authenticate, readEvent, createClient, fetchSnapshot,
-  mapSnapshot, preserveCrmFields, loadConfig, configurationStatus, endpoint, id };
+  mapSnapshot, preserveCrmFields, loadConfig, saveConfig, updatedConfig, configurationStatus, endpoint, id };

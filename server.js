@@ -270,19 +270,26 @@ async function handleApi(req, res, url) {
   const { pathname } = url;
   if (pathname === "/api/bitrix/events") {
     if (req.method !== "POST") return sendJson(res, 405, { error: "Метод не поддерживается." });
-    const config = await bitrix.loadConfig();
+    const config = await bitrix.loadConfig(dataDir);
     const dealId = bitrix.authenticate(await bitrix.readEvent(req), config);
     return sendJson(res, 200, dealId ? await syncBitrixDeal(dealId, config) : { skipped: "unsupported_event" });
   }
   if (pathname === "/api/bitrix/status" && req.method === "GET") {
     await requireAdmin(req);
-    return sendJson(res, 200, bitrix.configurationStatus(await bitrix.loadConfig(), await readJson(usersPath)));
+    return sendJson(res, 200, bitrix.configurationStatus(await bitrix.loadConfig(dataDir), await readJson(usersPath)));
+  }
+  if (pathname === "/api/bitrix/config" && req.method === "POST") {
+    await requireAdmin(req);
+    if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return sendJson(res, 403, { error: "Запрещенный источник запроса." });
+    const config = bitrix.updatedConfig(await bitrix.loadConfig(dataDir), await readJsonBody(req));
+    await bitrix.saveConfig(dataDir, config);
+    return sendJson(res, 200, bitrix.configurationStatus(config, await readJson(usersPath)));
   }
   if (pathname === "/api/bitrix/sync" && req.method === "POST") {
     await requireAdmin(req);
     if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return sendJson(res, 403, { error: "Запрещенный источник запроса." });
     const body = await readJsonBody(req);
-    return sendJson(res, 200, await syncBitrixDeal(bitrix.id(body.dealId), await bitrix.loadConfig()));
+    return sendJson(res, 200, await syncBitrixDeal(bitrix.id(body.dealId), await bitrix.loadConfig(dataDir)));
   }
   if (pathname === "/api/payouts") {
     const user = await requireUser(req);

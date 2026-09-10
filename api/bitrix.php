@@ -155,7 +155,7 @@ function bitrix_map_snapshot(array $snapshot, array $config, array $users, $prev
     if (!empty($config['paidAmountField'])) {
         if (!array_key_exists($config['paidAmountField'], $deal)) throw new BitrixException('Б24: поле фактической оплаты отсутствует.', 502);
         $value = $deal[$config['paidAmountField']];
-        $paid = $value === '' || $value === null ? 0 : bitrix_money($value);
+        $paid = $value === '' || $value === null || $value === false ? $amount : bitrix_money($value);
     }
     if (!empty($config['fullPaymentField'])) {
         if (!array_key_exists($config['fullPaymentField'], $deal)) throw new BitrixException('Б24: поле полной оплаты отсутствует.', 502);
@@ -169,7 +169,7 @@ function bitrix_map_snapshot(array $snapshot, array $config, array $users, $prev
     $meta = array_merge(bitrix_value($previous, 'registryMeta', []), [
         'title' => bitrix_text(bitrix_value($deal, 'TITLE')),
         'source' => bitrix_text(bitrix_value(bitrix_value($config, 'sourceMap', []), bitrix_value($deal, 'SOURCE_ID'), $snapshot['source'])),
-        'paymentStatus' => $dealStatus === 'Планируется' ? 'Планируется' : ($amount > 0 && $paid >= $amount ? 'Да' : ($paid > 0 ? 'Предоплата' : 'Планируется')),
+        'paymentStatus' => $dealStatus === 'Планируется' ? 'Планируется' : (!empty($config['paidAmountField']) || !empty($config['fullPaymentField']) ? ($paid >= $amount ? 'Да' : 'Предоплата') : 'Планируется'),
         'prepayment' => $paid, 'prepaymentOverridden' => true,
         'bitrix' => ['dealId' => bitrix_id($deal['ID']), 'domain' => strtolower(parse_url(bitrix_endpoint($config), PHP_URL_HOST)),
             'creatorId' => bitrix_id($deal['CREATED_BY_ID']), 'stageId' => bitrix_text(bitrix_value($deal, 'STAGE_ID')),
@@ -202,7 +202,38 @@ function bitrix_configuration_status(array $config, array $users)
         }
         $managers[] = ['name' => $name, 'login' => count($matches) === 1 ? $matches[0]['login'] : '', 'linked' => count($matches) === 1];
     }
-    return ['configured' => $configured, 'paymentConfigured' => !empty($config['paidAmountField']) || !empty($config['fullPaymentField']), 'managers' => $managers];
+    return ['configured' => $configured, 'domain' => $configured ? parse_url(bitrix_endpoint($config), PHP_URL_HOST) : '',
+        'paidAmountField' => bitrix_value($config, 'paidAmountField'), 'fullPaymentField' => bitrix_value($config, 'fullPaymentField'),
+        'numberField' => bitrix_value($config, 'numberField'),
+        'paymentConfigured' => !empty($config['paidAmountField']) || !empty($config['fullPaymentField']), 'managers' => $managers];
+}
+function bitrix_updated_config(array $previous, array $body)
+{
+    $config = $previous;
+    foreach (['webhookUrl','eventToken','paidAmountField','fullPaymentField','numberField'] as $key) {
+        if (!array_key_exists($key, $body)) continue;
+        if (!is_string($body[$key]) || strlen($body[$key]) > 2048) throw new BitrixException('Некорректные настройки Б24.', 400);
+        if (in_array($key, ['webhookUrl','eventToken'], true) && trim($body[$key]) === '') continue;
+        $config[$key] = trim($body[$key]);
+    }
+    bitrix_endpoint($config);
+    if (empty($config['eventToken'])) throw new BitrixException('Укажите токен исходящего вебхука.', 400);
+    foreach (['paidAmountField','fullPaymentField','numberField'] as $key) {
+        if (!empty($config[$key]) && !preg_match('/^[A-Z][A-Z0-9_]{0,100}$/D', $config[$key])) throw new BitrixException('Некорректный код поля Б24.', 400);
+    }
+    return $config;
+}
+function bitrix_save_config(array $config)
+{
+    $temporary = tempnam(__DIR__, '.bitrix-');
+    if (!$temporary) throw new BitrixException('Не удалось сохранить настройки Б24 на сервере.', 503);
+    chmod($temporary, 0600);
+    $body = "<?php\nreturn " . var_export($config, true) . ";\n";
+    if (file_put_contents($temporary, $body, LOCK_EX) !== strlen($body) || !rename($temporary, __DIR__ . '/bitrix.local.php')) {
+        @unlink($temporary);
+        throw new BitrixException('Не удалось сохранить настройки Б24 на сервере.', 503);
+    }
+    if (function_exists('opcache_invalidate')) opcache_invalidate(__DIR__ . '/bitrix.local.php', true);
 }
 function bitrix_sync(PDO $pdo, array $config, $id, $call = null)
 {

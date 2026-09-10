@@ -7,6 +7,10 @@ const createUserButton = document.querySelector("#createUserButton");
 const reloadUsersButton = document.querySelector("#reloadUsersButton");
 const usersStatus = document.querySelector("#usersStatus");
 const usersList = document.querySelector("#usersList");
+const bitrixStatus = document.querySelector("#bitrixStatus");
+const bitrixManagers = document.querySelector("#bitrixManagers");
+const bitrixConfigForm = document.querySelector("#bitrixConfigForm");
+const bitrixSyncForm = document.querySelector("#bitrixSyncForm");
 
 let users = [];
 
@@ -91,6 +95,7 @@ async function loadUsers(successMessage = "") {
     users = await apiRequest();
     renderUsers();
     setUsersStatus(successMessage || `Пользователей: ${users.length}`, successMessage ? "success" : "");
+    await loadBitrixStatus();
   } catch (error) {
     setUsersStatus(error.message, "error");
   }
@@ -145,6 +150,7 @@ usersList.addEventListener("click", async (event) => {
     try {
       users = await apiRequest({ method: "PUT", body: JSON.stringify({ action: "profile", id: Number(row.dataset.userId), fullName: input.value.trim() }) });
       setUsersStatus("ФИО сохранено. Оно используется для связи с Битрикс24.", "success");
+      await loadBitrixStatus();
     } catch (error) {
       setUsersStatus(error.message, "error");
     } finally {
@@ -194,6 +200,51 @@ usersList.addEventListener("click", async (event) => {
 });
 
 reloadUsersButton.addEventListener("click", () => loadUsers());
+
+async function bitrixRequest(route, body) {
+  const response = await fetch(`/api/bitrix/${route}`, { cache: "no-store", method: body ? "POST" : "GET",
+    headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Ошибка подключения Б24.");
+  return result;
+}
+
+async function loadBitrixStatus() {
+  try {
+    const status = await bitrixRequest("status");
+    bitrixStatus.textContent = status.configured ? `Подключение настроено: ${status.domain}.${status.paymentConfigured ? "" : " Укажите поле предоплаты."}` : "Подключение ещё не настроено.";
+    bitrixManagers.innerHTML = `<ul>${status.managers.map(manager => `<li>${escapeHtml(manager.name)} — ${manager.linked ? escapeHtml(manager.login) : "заполните ФИО в единственной учётной записи"}</li>`).join("")}</ul>`;
+    for (const key of ["paidAmountField", "fullPaymentField", "numberField"]) {
+      if (document.activeElement !== bitrixConfigForm.elements[key]) bitrixConfigForm.elements[key].value = status[key] || "";
+    }
+  } catch (error) { bitrixStatus.textContent = error.message; }
+}
+
+bitrixConfigForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const button = event.submitter;
+  button.disabled = true;
+  try {
+    await bitrixRequest("config", Object.fromEntries(new FormData(bitrixConfigForm)));
+    bitrixConfigForm.elements.webhookUrl.value = "";
+    bitrixConfigForm.elements.eventToken.value = "";
+    await loadBitrixStatus();
+  } catch (error) { bitrixStatus.textContent = error.message; }
+  finally { button.disabled = false; }
+});
+
+bitrixSyncForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const button = event.submitter;
+  button.disabled = true;
+  bitrixStatus.textContent = "Синхронизирую сделку…";
+  try {
+    const result = await bitrixRequest("sync", { dealId: bitrixSyncForm.elements.dealId.value.trim() });
+    const skipped = { manager_not_allowed_or_unmapped: "Создатель сделки не связан с одним из восьми менеджеров.", record_deleted: "Запись ранее удалена из реестра.", stale_snapshot: "В реестре уже сохранены более свежие данные." };
+    bitrixStatus.textContent = result.synced ? `Сделка ${result.number}: ${result.dealStatus}.${result.unmappedStage ? " Стадия Б24 не сопоставлена." : ""}` : skipped[result.skipped] || "Сделка пропущена.";
+  } catch (error) { bitrixStatus.textContent = error.message; }
+  finally { button.disabled = false; }
+});
 
 async function initUsers() {
   await window.ManagerAuth.ready;

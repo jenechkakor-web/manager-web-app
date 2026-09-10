@@ -23,6 +23,13 @@ test('Б24: все стадии, создатель, фактическая оп
     assert.equal(bonusCents(record),status==='Завершена'?1200000:0);
   }
   assert.equal(bitrix.stageStatus('  создать Счёт и Договор (М) '),'Планируется');
+  for (const value of ['',null,false,'100000.00|RUB']) {
+    const paid = mapped({stageName:'ЗАМЕР (пр)',deal:{...snapshot.deal,UF_PAID:value}});
+    assert.equal(paid.registryMeta.paymentStatus,'Да');assert.equal(paid.registryMeta.prepayment,100000);
+    assert.equal(bonusCents(paid),0);
+    const planned = mapped({deal:{...snapshot.deal,UF_PAID:value}});
+    assert.equal(planned.registryMeta.paymentStatus,'Планируется');
+  }
   const full=mapped({stageName:'В ПРОИЗВОДСТВЕ (пр)',deal:{...snapshot.deal,UF_PAID:'100 000,00|RUB'}});
   full.registryMeta.bonusType='12%'; full.registryMeta.closingDocs='Отправлены';
   assert.equal(full.registryMeta.paymentStatus,'Да');assert.equal(bonusCents(full),0);
@@ -92,6 +99,14 @@ test('Б24 HTTP: ФИО, создание/изменение, повторные
     assert.equal((await request('users',{action:'profile',id:2,fullName:'  Антон  Исаков '},admin,'PUT')).status,200);
     const accounts=await (await request('users',undefined,admin,'GET')).json();assert.equal(accounts.find(u=>u.id===2).fullName,'Антон Исаков');
     assert.equal((await request('bitrix/status',undefined,other,'GET')).status,403);
+    assert.equal((await request('bitrix/config',config,other)).status,403);
+    const save=await request('bitrix/config',{webhookUrl:'',eventToken:'',paidAmountField:'UF_PAID'},admin);
+    assert.equal(save.status,200);
+    const publicSettings=await save.text();assert(!publicSettings.includes('test-token'));assert(!publicSettings.includes('test-event-token'));
+    assert.equal(JSON.parse(await fs.readFile(conf,'utf8')).eventToken,config.eventToken);
+    const foreign=await fetch(`${base}/api/bitrix/config`,{method:'POST',headers:{cookie:admin,'Content-Type':'application/json',Origin:'https://evil.example'},body:JSON.stringify(config)});
+    assert.equal(foreign.status,403);
+    assert.equal((await request('bitrix/config',{paidAmountField:'bad field'},admin)).status,400);
     assert.equal((await request('bitrix/events',undefined,'','GET')).status,405);
     assert.equal((await request('bitrix/events',{...event(),auth:{}})).status,403);
     const posted=await Promise.all(Array.from({length:6},()=>request('bitrix/events',event())));assert(posted.every(r=>r.status===200));

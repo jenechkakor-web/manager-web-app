@@ -518,6 +518,13 @@ try {
         require_admin($pdo);
         respond(bitrix_configuration_status(bitrix_value($config, 'bitrix', []), fetch_users($pdo)));
     }
+    if ($route === 'bitrix/config' && $method === 'POST') {
+        require_same_origin();
+        require_admin($pdo);
+        $bitrixConfig = bitrix_updated_config(bitrix_value($config, 'bitrix', []), request_json());
+        bitrix_save_config($bitrixConfig);
+        respond(bitrix_configuration_status($bitrixConfig, fetch_users($pdo)));
+    }
     if ($route === 'bitrix/sync' && $method === 'POST') {
         require_same_origin();
         require_admin($pdo);

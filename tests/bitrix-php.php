@@ -13,6 +13,12 @@ foreach (bitrix_rules()['stages'] as $status => $names) foreach ($names as $name
     check_bitrix(payout_bonus_cents($record) === ($status === 'Завершена' ? 1200000 : 0), 'Bonus');
 }
 check_bitrix(bitrix_stage_status('  создать Счёт и Договор (М) ') === 'Планируется', 'Case and spaces');
+foreach (['', null, false, '100000.00|RUB'] as $value) {
+    $input = $snapshot; $input['stageName'] = 'ЗАМЕР (пр)'; $input['deal']['UF_PAID'] = $value;
+    $paid = normalize_record(bitrix_map_snapshot($input, $config, $users)['record']);
+    check_bitrix($paid['registryMeta']['paymentStatus'] === 'Да' && $paid['registryMeta']['prepayment'] == 100000, 'Empty or equal advance means full payment');
+    check_bitrix(payout_bonus_cents($paid) === 0, 'Full payment in production does not accrue');
+}
 foreach (bitrix_rules()['managers'] as $name) {
     $parts = explode(' ', $name);
     check_bitrix(bitrix_manager(['ID'=>'99','NAME'=>$parts[0],'LAST_NAME'=>$parts[1]], [['id'=>9,'login'=>'test','fullName'=>$name]], [])['id'] === 9, 'Allowlisted manager');
@@ -23,6 +29,11 @@ check_bitrix(bitrix_manager($snapshot['creator'], $duplicates, $config) === null
 check_bitrix(bitrix_manager(['ID'=>'999','NAME'=>'Посторонний','LAST_NAME'=>'Сотрудник'], $users, $config) === null, 'Non-allowlisted account');
 $event = ['event'=>'ONCRMDEALADD','auth'=>['domain'=>'portal.example','application_token'=>$config['eventToken']],'data'=>['FIELDS'=>['ID'=>'17000']]];
 check_bitrix(bitrix_authenticate($event, $config) === '17000', 'Valid event');
+$settings = bitrix_updated_config($config, ['webhookUrl'=>'','eventToken'=>'','paidAmountField'=>'UF_PAID']);
+check_bitrix($settings['eventToken'] === $config['eventToken'], 'Blank credentials retain saved values');
+$publicSettings = json_encode(bitrix_configuration_status($settings, $users));
+check_bitrix(strpos($publicSettings, 'test-token') === false && strpos($publicSettings, 'test-event-token') === false, 'No credentials in API status');
+try { bitrix_updated_config($config, ['paidAmountField'=>'bad field']); throw new RuntimeException('Accepted invalid config'); } catch (BitrixException $expected) {}
 $bad = $event; $bad['auth']['domain'] = 'evil.example';
 try { bitrix_authenticate($bad, $config); throw new RuntimeException('Accepted untrusted domain'); } catch (BitrixException $expected) { check_bitrix($expected->getCode() === 403, 'Forbidden'); }
 $bad = $event; $bad['auth']['application_token'] = 'bad';

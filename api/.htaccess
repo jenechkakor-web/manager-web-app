@@ -1,6 +1,6 @@
 Options -Indexes
 
-<FilesMatch "^bitrix.*\.(php|json|cjs)$">
+<FilesMatch "^(bitrix.*\.(php|json|cjs)|\.bitrix-.*)$">
   Require all denied
 </FilesMatch>
 
