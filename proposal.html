@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Договоры менеджера</title>
-    <link rel="stylesheet" href="styles.css?v=20260702-deals-prod-1" />
+    <title>Создать КП — Веркуп</title>
+    <link rel="stylesheet" href="styles.css?v=20260910-proposal-1" />
   </head>
-  <body>
+  <body data-document-page="proposal">
     <main class="app-shell">
       <section class="workspace">
         <aside class="sidebar" aria-label="Разделы приложения">
@@ -18,12 +18,12 @@
             </div>
           </div>
           <nav class="nav-list">
-            <button class="nav-item active" type="button">Создать Договор и Счет</button>
+            <a class="nav-item" href="index.html">Создать Договор и Счет</a>
             <a class="nav-item" href="registry.html">Реестр сделок</a>
             <a class="nav-item hidden" href="dashboard.html" data-admin-only>Дашборд</a>
             <a class="nav-item hidden" href="library.html" data-admin-only>Справочник</a>
             <a class="nav-item hidden" href="users.html" data-admin-only>Пользователи</a>
-            <a class="nav-item" href="proposal.html">Создать КП</a>
+            <a class="nav-item active" href="proposal.html">Создать КП</a>
           </nav>
           <div class="sidebar-session">
             <div><strong data-auth-login></strong><small data-auth-role></small></div>
@@ -34,12 +34,11 @@
         <form id="contractForm" class="content">
           <header class="topbar">
             <div>
-              <h1>Новый договор</h1>
-              <p>Заполнение договора и приложения для выгрузки в Word.</p>
+              <h1>Коммерческое предложение</h1>
+              <p>Подготовьте КП на фирменном бланке Веркуп и выгрузите его в Word.</p>
             </div>
             <div class="top-actions">
-              <button class="button ghost" id="saveDraftButton" type="button">Сохранить черновик</button>
-              <button class="button primary" id="downloadContractButton" type="button">Выгрузить документ</button>
+              <button class="button primary" id="downloadProposalButton" type="button">Выгрузить КП</button>
             </div>
           </header>
 
@@ -50,11 +49,11 @@
               </div>
               <div class="grid two">
                 <label>
-                  <span>Номер договора</span>
-                  <input name="contractNumber" required placeholder="6820" />
+                  <span>Номер КП (необязательно)</span>
+                  <input name="contractNumber" placeholder="6820" />
                 </label>
                 <label>
-                  <span>Дата договора</span>
+                  <span>Дата КП</span>
                   <input name="contractDate" type="date" required />
                 </label>
               </div>
@@ -73,69 +72,15 @@
                 </div>
               </fieldset>
 
-              <div class="seller-details" id="sellerDetails" aria-live="polite"></div>
-
-              <fieldset>
-                <legend>Заказчик</legend>
-                <div class="segmented">
-                  <label>
-                    <input type="radio" name="customerType" value="legal" checked />
-                    <span>Юридическое лицо</span>
-                  </label>
-                  <label>
-                    <input type="radio" name="customerType" value="person" />
-                    <span>Физическое лицо</span>
-                  </label>
-                </div>
-              </fieldset>
-
-              <div id="legalFields" class="customer-fields">
-                <div class="inline-row">
-                  <label class="grow">
-                    <span>ИНН заказчика</span>
-                    <input name="customerInn" inputmode="numeric" placeholder="Введите ИНН" />
-                  </label>
-                  <button class="button lookup" id="lookupInnButton" type="button">Найти по ИНН</button>
-                </div>
-                <div class="grid two">
-                  <label>
-                    <span>Наименование</span>
-                    <input name="customerName" placeholder="ООО Ромашка" />
-                  </label>
-                  <label>
-                    <span>КПП</span>
-                    <input name="customerKpp" placeholder="770001001" />
-                  </label>
-                  <label class="span-2">
-                    <span>Юридический адрес</span>
-                    <textarea name="customerAddress" rows="2"></textarea>
-                  </label>
-                  <label>
-                    <span>ОГРН</span>
-                    <input name="customerOgrn" />
-                  </label>
-                  <label>
-                    <span>Руководитель / представитель</span>
-                    <input name="customerDirector" />
-                  </label>
-                </div>
-              </div>
-
-              <div id="personFields" class="customer-fields hidden">
-                <div class="grid two">
-                  <label>
-                    <span>ФИО</span>
-                    <input name="personName" placeholder="Иванов Иван Иванович" />
-                  </label>
-                  <label>
-                    <span>Серия и номер паспорта</span>
-                    <input name="passport" placeholder="4512 123456" />
-                  </label>
-                  <label class="span-2">
-                    <span>Адрес регистрации</span>
-                    <textarea name="personAddress" rows="2"></textarea>
-                  </label>
-                </div>
+              <label>
+                <span>Заказчик (необязательно)</span>
+                <input name="customerName" placeholder="Название компании или имя клиента" />
+              </label>
+              <div class="panel-title manager-contact-title"><h2>Контакты менеджера</h2></div>
+              <div class="grid two">
+                <label class="span-2"><span>Имя Фамилия</span><input name="managerName" autocomplete="name" required /></label>
+                <label><span>Почта</span><input name="managerEmail" type="email" autocomplete="email" required placeholder="name@verkup.ru" /></label>
+                <label><span>Телефон</span><input name="managerPhone" type="tel" autocomplete="tel" required placeholder="+7 (999) 123-45-67" /></label>
               </div>
             </div>
 
@@ -143,15 +88,6 @@
               <div class="panel-title">
                 <h2>Настройки</h2>
               </div>
-              <label>
-                <span>Шаблон выгрузки</span>
-                <select name="documentTemplate">
-                  <option value="contract">Договор подряда</option>
-                  <option value="invoiceContract" selected>Счет-договор</option>
-                  <option value="measurementInvoiceContract">Счет-договор на замер</option>
-                  <option value="invoice">Счет</option>
-                </select>
-              </label>
               <label>
                 <span>Порядок оплаты</span>
                 <select name="paymentTerms">
@@ -181,25 +117,18 @@
                 </select>
               </label>
               <label>
-                <span>Добавить подпись и печать</span>
-                <select name="addSignatureSeal">
-                  <option value="no" selected>Нет</option>
-                  <option value="yes">Да</option>
-                </select>
-              </label>
-              <label>
                 <span>Срок выполнения работ, рабочих дней</span>
                 <input name="workDays" type="number" min="1" step="1" value="10" required />
               </label>
               <label>
-                <span>Адрес монтажа / доставки / работ</span>
-                <textarea name="workAddress" rows="4" required></textarea>
+                <span>Адрес монтажа / доставки / работ (необязательно)</span>
+                <textarea name="workAddress" rows="4"></textarea>
               </label>
             </aside>
 
             <section class="panel span-12">
               <div class="panel-title row-title">
-                <h2>Позиции договора</h2>
+                <h2>Позиции предложения</h2>
                 <button class="button ghost" id="addItemButton" type="button">Добавить позицию</button>
               </div>
               <div class="items-table">
@@ -228,10 +157,6 @@
                 </div>
               </div>
               <div id="techDescriptions" class="tech-descriptions"></div>
-              <label class="checkbox-line">
-                <input name="requestLibraryAdd" type="checkbox" />
-                <span>Запросить добавление описания в библиотеку</span>
-              </label>
             </section>
           </section>
         </form>
@@ -239,7 +164,6 @@
     </main>
 
     <script src="auth.js?v=20260702-deals-prod-1"></script>
-    <script src="registry-storage-sync.js?v=20260910-bitrix-2"></script>
     <script src="app.js?v=20260910-proposal-1"></script>
   </body>
 </html>

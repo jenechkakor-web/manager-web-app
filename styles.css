@@ -54,6 +54,12 @@ button {
   transition: grid-template-columns 0.22s ease;
 }
 
+[data-document-page="proposal"] .manager-contact-title { margin-top: 24px; }
+@media (max-width: 1020px) {
+  [data-document-page="proposal"] .nav-list { grid-auto-columns: max-content; }
+  [data-document-page="proposal"] .topbar { grid-template-columns: minmax(0, 1fr); justify-content: stretch; }
+}
+
 /* Registry working sheet: search, filters, table and summary share one width. */
 .registry-panel {
   overflow: visible;

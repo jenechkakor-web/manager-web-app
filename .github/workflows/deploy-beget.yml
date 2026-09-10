@@ -58,7 +58,7 @@ jobs:
             upload_api=true
             files=(
               .htaccess
-              index.html login.html registry.html dashboard.html library.html users.html payouts.html
+              index.html proposal.html login.html registry.html dashboard.html library.html users.html payouts.html
               app.js auth.js login.js registry-storage-sync.js registry.js dashboard.js library.js users.js styles.css payouts.js payouts-table.js payouts.css
               dogovor_final.docx invoice_template.docx
               schet_dogovor_template.docx schet_dogovor_zamery_template.docx
@@ -81,6 +81,7 @@ jobs:
             files+=(
               ".htaccess"
               "index.html"
+              "proposal.html"
               "login.html"
               "registry.html"
               "dashboard.html"
@@ -166,6 +167,7 @@ jobs:
           get /login.html -o backup-live/login.html
           get /registry.html -o backup-live/registry.html
           set cmd:fail-exit false
+          get /proposal.html -o backup-live/proposal.html
           get /dashboard.html -o backup-live/dashboard.html
           get /dashboard.js -o backup-live/dashboard.js
           get /payouts.html -o backup-live/payouts.html
@@ -405,7 +407,7 @@ jobs:
         run: |
           set -euo pipefail
           # Restore only application files, never SQL/JSON data or server credentials.
-          for relative in api/index.php api/.htaccess api/config.php api/payouts.php api/bitrix.php api/bitrix-rules.json .htaccess index.html login.html registry.html dashboard.html library.html users.html app.js auth.js login.js registry-storage-sync.js registry.js dashboard.js library.js users.js styles.css payouts.html payouts.js payouts-table.js payouts.css; do
+          for relative in api/index.php api/.htaccess api/config.php api/payouts.php api/bitrix.php api/bitrix-rules.json .htaccess index.html proposal.html login.html registry.html dashboard.html library.html users.html app.js auth.js login.js registry-storage-sync.js registry.js dashboard.js library.js users.js styles.css payouts.html payouts.js payouts-table.js payouts.css; do
             if [[ -f "backup-live/$relative" ]]; then
               curl --fail --show-error --silent --ftp-ssl-control \
                 --user "$FTP_USERNAME:$FTP_PASSWORD" --ftp-create-dirs --connect-timeout 15 --max-time 90 \

@@ -1,0 +1,55 @@
+// Isolated browser smoke test: node tests/proposal-ui.cjs <playwright> <browser executable>
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const assert = require('node:assert/strict');
+const {spawn} = require('node:child_process');
+const {chromium} = require(process.argv[2]);
+(async () => {
+  const root = path.resolve(__dirname,'..');
+  const dir = await fs.mkdtemp(path.join(root,'.data','proposal-ui-'));
+  const salt = crypto.randomBytes(16).toString('hex');
+  const password = 'IsolatedProposal2026';
+  await fs.writeFile(path.join(dir,'users.json'),JSON.stringify([{id:1,login:'proposal_test',role:'user',fullName:'Иван Дмитриев',passwordHash:`${salt}:${crypto.scryptSync(password,salt,64).toString('hex')}`} ]));
+  await fs.writeFile(path.join(dir,'tech-presets.json'),'[]');
+  await fs.writeFile(path.join(dir,'contracts-registry.json'),'[]');
+  const child=spawn(process.execPath,['server.js'],{cwd:root,env:{...process.env,PORT:'0',MANAGER_DATA_DIR:dir},windowsHide:true});
+  let browser;
+  try {
+    const base=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Server timeout')),10000);child.stdout.on('data',chunk=>{const m=String(chunk).match(/http:\/\/127.0.0.1:\d+/);if(m){clearTimeout(timer);resolve(m[0]);}});child.on('error',reject);});
+    browser=await chromium.launch({executablePath:process.argv[3],headless:true});
+    const page=await browser.newPage({viewport:{width:1440,height:1050}});
+    const errors=[]; page.on('pageerror',e=>errors.push(e.message));
+    await page.goto(`${base}/login.html?next=%2Fproposal.html`);
+    await page.getByLabel('Логин',{exact:true}).fill('proposal_test');
+    await page.getByLabel('Пароль',{exact:true}).fill(password);
+    await page.getByRole('button',{name:'Войти',exact:true}).click();
+    await page.locator('.item-row').waitFor();
+    await page.waitForFunction(()=>document.querySelector('[name="managerName"]').value !== '');
+    assert.equal(await page.getByLabel('Имя Фамилия',{exact:true}).inputValue(),'Иван Дмитриев');
+    assert.equal(await page.locator('[name="customerInn"], [name="passport"], #sellerDetails').count(),0);
+    await page.getByLabel('Почта',{exact:true}).fill('manager@example.test');
+    await page.getByLabel('Телефон',{exact:true}).fill('+7 (999) 123-45-67');
+    await page.getByLabel('Номер КП (необязательно)',{exact:true}).fill('QA-123');
+    await page.getByLabel('Заказчик (необязательно)',{exact:true}).fill('ООО Пример');
+    await page.locator('.item-name').fill('Световая вывеска');
+    await page.locator('.item-qty').fill('2');
+    await page.locator('.item-price').fill('15000');
+    await page.screenshot({path:path.join(root,'.tmp','proposal-qa','page-desktop.png'),fullPage:true});
+    const downloaded=page.waitForEvent('download');
+    await page.getByRole('button',{name:'Выгрузить КП',exact:true}).click();
+    const download=await downloaded;
+    assert.match(download.suggestedFilename(),/^КП_Веркуп_QA-123_.*\.docx$/);
+    await download.saveAs(path.join(root,'.tmp','proposal-qa','browser-proposal.docx'));
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(dir,'contracts-registry.json'),'utf8')),[]);
+    await page.getByRole('link',{name:'Создать Договор и Счет',exact:true}).click();
+    await page.getByRole('button',{name:'Выгрузить документ',exact:true}).waitFor();
+    assert.equal(await page.locator('#downloadProposalButton').count(),0);
+    await page.getByRole('link',{name:'Создать КП',exact:true}).click();
+    await page.locator('.item-row').waitFor();
+    await page.setViewportSize({width:390,height:844});
+    await page.screenshot({path:path.join(root,'.tmp','proposal-qa','page-mobile.png'),fullPage:true});
+    assert.deepEqual(errors,[]);
+    console.log('Proposal UI passed: contacts, no requisites, DOCX download, unchanged registry, contract page, navigation.');
+  } finally {if(browser) await browser.close(); child.kill();}
+})().catch(error=>{console.error(error);process.exitCode=1;});

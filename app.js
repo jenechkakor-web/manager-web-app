@@ -64,6 +64,7 @@ const DEFAULT_TECH_PRESETS = [
 ];
 
 const form = document.querySelector("#contractForm");
+const IS_PROPOSAL_PAGE = document.body.dataset.documentPage === "proposal";
 const itemsBody = document.querySelector("#itemsBody");
 const legalFields = document.querySelector("#legalFields");
 const personFields = document.querySelector("#personFields");
@@ -615,6 +616,7 @@ function getSeller() {
 }
 
 function renderSellerDetails() {
+  if (!sellerDetails) return;
   const seller = getSeller();
   sellerDetails.innerHTML = `
     <div><span>Наименование</span><strong>${escapeHtml(seller.fullName)}</strong></div>
@@ -659,17 +661,22 @@ function collectData() {
   const technicalDescriptions = technicalBlocks.map((block) => block.description).filter(Boolean);
   const total = items.reduce((sum, item) => sum + item.sum, 0);
   const vat = (total * seller.vatRate) / (1 + seller.vatRate);
-  const customerType = getField("customerType").value;
+  const customerType = IS_PROPOSAL_PAGE ? "proposal" : getField("customerType").value;
 
   return {
     contractNumber: getField("contractNumber").value.trim(),
     contractDate: getField("contractDate").value,
-    documentTemplate: getField("documentTemplate").value,
+    documentTemplate: IS_PROPOSAL_PAGE ? "proposal" : getField("documentTemplate").value,
     sellerKey: getField("seller").value,
     seller,
     customerType,
+    managerContact: IS_PROPOSAL_PAGE ? {
+      name: getField("managerName").value.trim(),
+      email: getField("managerEmail").value.trim(),
+      phone: getField("managerPhone").value.trim(),
+    } : undefined,
     customer:
-      customerType === "legal"
+      IS_PROPOSAL_PAGE ? {name: getField("customerName").value.trim()} : customerType === "legal"
         ? {
             type: "Юридическое лицо",
             inn: getField("customerInn").value.trim(),
@@ -688,13 +695,13 @@ function collectData() {
     paymentTerms: getField("paymentTerms").value,
     finalPaymentTiming: getField("finalPaymentTiming").value,
     warranty: getField("warranty").value.trim(),
-    addSignatureSeal: getField("addSignatureSeal").value === "yes",
+    addSignatureSeal: !IS_PROPOSAL_PAGE && getField("addSignatureSeal").value === "yes",
     workDays: getField("workDays").value.trim(),
     workAddress: getField("workAddress").value.trim(),
     technicalBlocks,
     technicalDescriptions,
     technicalDescription: technicalDescriptions.join("\n"),
-    requestLibraryAdd: getField("requestLibraryAdd").checked,
+    requestLibraryAdd: !IS_PROPOSAL_PAGE && getField("requestLibraryAdd").checked,
     items,
     totals: {
       totalWithoutVat: total - vat,
@@ -716,6 +723,22 @@ function validateBeforeDownload() {
     alert("Добавьте хотя бы одну заполненную позицию.");
     return false;
   }
+  return true;
+}
+
+function validateBeforeProposal() {
+  for (const name of ["managerName", "managerEmail", "managerPhone"]) {
+    const field = getField(name);
+    field.value = field.value.trim();
+    if (!field.reportValidity()) return false;
+  }
+  if (!getField("contractDate").value || !getField("contractDate").reportValidity()) return false;
+  const items = getItems();
+  if (!items.length || items.some((item) => !item.name || !Number.isFinite(item.qty) || item.qty <= 0 || !Number.isFinite(item.price) || item.price < 0 || !Number.isFinite(item.sum)) || !items.some((item) => item.price > 0)) {
+    alert("Заполните все позиции КП: наименование, количество больше нуля и цену. Общая сумма должна быть больше нуля.");
+    return false;
+  }
+  if (getField("workDays").value && !getField("workDays").reportValidity()) return false;
   return true;
 }
 
@@ -2544,6 +2567,83 @@ async function buildInvoiceContractDocxBlob(data, options = {}) {
   return makeZip(files);
 }
 
+function proposalParagraph(text, options = {}) {
+  const size = options.size || 22;
+  const lines = String(text).split(/\r?\n/);
+  const runs = lines.map((line, index) => `<w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:color w:val="000000"/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/>${options.bold ? "<w:b/>" : ""}</w:rPr>${index ? "<w:br/>" : ""}<w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r>`).join("");
+  return `<w:p><w:pPr>${options.title ? '<w:pStyle w:val="ProposalTitle"/>' : ""}${options.keepNext ? "<w:keepNext/>" : ""}<w:widowControl/><w:spacing w:before="${options.before || 0}" w:after="${options.after ?? 120}" w:line="264" w:lineRule="auto"/><w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="${options.align || "left"}"/></w:pPr>${runs}</w:p>`;
+}
+
+function proposalItemsTable(data) {
+  const widths = [550, 4550, 1050, 2050, 2150];
+  const rows = [["№", "Наименование", "Кол-во", "Цена, руб.", "Сумма, руб."],
+    ...data.items.map((item, index) => [String(index + 1), item.name, plainMoney(item.qty), plainMoney(item.price), plainMoney(item.sum)])];
+  const body = rows.map((row, index) => `<w:tr>${index === 0 ? "<w:trPr><w:tblHeader/><w:cantSplit/></w:trPr>" : ""}${row.map((text, col) => `<w:tc><w:tcPr><w:tcW w:w="${widths[col]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>${proposalParagraph(text, {size:20, bold:index === 0, after:0, align:index === 0 || col === 0 ? "center" : col > 1 ? "right" : "left"})}</w:tc>`).join("")}</w:tr>`).join("");
+  return `<w:tbl><w:tblPr><w:tblW w:w="10350" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders>${["top", "left", "bottom", "right", "insideH", "insideV"].map((edge) => `<w:${edge} w:val="single" w:sz="4" w:color="000000"/>`).join("")}</w:tblBorders><w:tblCellMar>${["top", "left", "bottom", "right"].map((edge) => `<w:${edge} w:w="90" w:type="dxa"/>`).join("")}</w:tblCellMar></w:tblPr><w:tblGrid>${widths.map((width) => `<w:gridCol w:w="${width}"/>`).join("")}</w:tblGrid>${body}</w:tbl>`;
+}
+
+function proposalPaymentText(data) {
+  const percent = Number(data.paymentTerms) || 0;
+  const total = data.totals.grandTotal;
+  if (percent === 100) return `Оплата: предоплата 100% — ${docMoney(total)}.`;
+  if (percent === 0) return `Оплата: без предоплаты, ${docMoney(total)} ${finalPaymentTimingText(data.finalPaymentTiming)}.`;
+  const advance = Math.round(total * percent) / 100;
+  return `Оплата: предоплата ${percent}% — ${docMoney(advance)}; остаток ${100 - percent}% — ${docMoney(total - advance)} ${finalPaymentTimingText(data.finalPaymentTiming)}.`;
+}
+
+async function buildProposalDocxBlob(data) {
+  const response = await fetchRepositoryAsset("schet_dogovor_template.docx", { cache: "no-store" });
+  if (!response.ok) throw new Error("Не удалось загрузить фирменный бланк Веркуп.");
+  const files = await unzipDocx(await response.arrayBuffer());
+  const originalXml = fileText(files, "word/document.xml");
+  // The first section owns the original letterhead; the proposal replaces the invoice body.
+  const section = originalXml.match(/<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>/)?.[0];
+  if (!section || !section.includes("w:headerReference")) throw new Error("В шаблоне отсутствует фирменная шапка Веркуп.");
+  const blocks = getDocumentTechnicalBlocks(data).filter((block) => (block.description && block.description !== "Техническое описание не указано.") || block.mockups?.length);
+  const proposalData = { ...data, technicalBlocks: blocks };
+  const imageFiles = createImageFilesFromBlocks(proposalData, {relPrefix:"rIdProposalMockup", filePrefix:"proposal-mockup", idOffset:500});
+  const p = proposalParagraph;
+  const body = [
+    p("Коммерческое предложение", {title:true, size:32, bold:true, align:"center", before:160, after:180, keepNext:true}),
+    p(`${data.contractNumber ? `№ ${data.contractNumber} ` : ""}от ${longDateText(data.contractDate)} г.`, {align:"center", after:240, keepNext:true}),
+    data.customer.name ? p(`Заказчик: ${data.customer.name}`, {bold:true, keepNext:true}) : "",
+    p(`Исполнитель: ${data.seller.fullName}`, {after:220, keepNext:true}),
+    proposalItemsTable(data),
+    p(`Итого: ${docMoney(data.totals.grandTotal)}`, {bold:true, align:"right", before:160, keepNext:true}),
+    p(`В том числе ${data.seller.vatLabel}: ${docMoney(data.totals.vat)}`, {align:"right", after:220}),
+    p("Условия предложения", {bold:true, before:200, keepNext:true}),
+    p(proposalPaymentText(data)),
+    data.workDays ? p(`Срок выполнения: до ${data.workDays} рабочих дней${Number(data.paymentTerms) > 0 ? " после поступления предоплаты и согласования макета" : " после согласования макета"}.`) : "",
+    data.workAddress ? p(`Адрес монтажа / доставки / работ: ${data.workAddress}`) : "",
+    data.warranty ? p(data.warranty === "Без гарантии" ? "Гарантия: без гарантии." : `Гарантия: ${data.warranty}.`) : "",
+    blocks.length ? p("Техническое описание", {bold:true, before:200, keepNext:true}) : "",
+    ...blocks.map((block, index) => [
+      block.preset ? p(block.preset, {bold:true, keepNext:true}) : "",
+      ...(block.description || "").split(/\r?\n/).filter(Boolean).map((line) => p(line)),
+      ...imageFiles.filter((image) => image.blockIndex === index).map((image) => wImage(image)),
+    ].join("")),
+    p("Ваш менеджер", {bold:true, before:240, keepNext:true}),
+    p(data.managerContact.name, {bold:true, keepNext:true}),
+    p(`Почта: ${data.managerContact.email}`, {keepNext:true}),
+    p(`Телефон: ${data.managerContact.phone}`),
+  ].join("");
+  replaceFile(files, "word/document.xml", originalXml.replace(/<w:body>[\s\S]*<\/w:body>/, `<w:body>${body}${section}</w:body>`));
+  let relsXml = fileText(files, "word/_rels/document.xml.rels");
+  let contentTypesXml = fileText(files, "[Content_Types].xml");
+  imageFiles.forEach((image) => {
+    relsXml = addRelationshipXml(relsXml, image.relId, image.target);
+    contentTypesXml = ensureImageContentType(contentTypesXml, image.mime);
+    replaceFile(files, image.path, image.bytes);
+  });
+  if (imageFiles.length) {
+    replaceFile(files, "word/_rels/document.xml.rels", relsXml);
+    replaceFile(files, "[Content_Types].xml", contentTypesXml);
+  }
+  const styles = fileText(files, "word/styles.xml");
+  if (!styles.includes('w:styleId="ProposalTitle"')) replaceFile(files, "word/styles.xml", styles.replace("</w:styles>", '<w:style w:type="paragraph" w:styleId="ProposalTitle"><w:name w:val="Title"/><w:basedOn w:val="a"/><w:qFormat/><w:pPr><w:keepNext/></w:pPr><w:rPr><w:color w:val="000000"/></w:rPr></w:style></w:styles>'));
+  return makeZip(files);
+}
+
 function buildMeasurementInvoiceContractDocxBlob(data) {
   return buildInvoiceContractDocxBlob(data, {
     kind: "measurement",
@@ -2763,9 +2863,27 @@ async function lookupInn() {
 }
 
 document.querySelector("#addItemButton").addEventListener("click", () => addItem());
-document.querySelector("#saveDraftButton").addEventListener("click", () => saveDraft());
-document.querySelector("#lookupInnButton").addEventListener("click", lookupInn);
-document.querySelector("#downloadContractButton").addEventListener("click", async () => {
+document.querySelector("#saveDraftButton")?.addEventListener("click", () => saveDraft());
+document.querySelector("#lookupInnButton")?.addEventListener("click", lookupInn);
+document.querySelector("#downloadProposalButton")?.addEventListener("click", async (event) => {
+  if (!validateBeforeProposal()) return;
+  const data = collectData();
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "Подготовка КП…";
+  try {
+    const blob = await buildProposalDocxBlob(data);
+    const number = (data.contractNumber || data.customer.name || "Предложение").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").slice(0, 100);
+    downloadDocx(`КП_Веркуп_${number}_${data.contractDate}.docx`, blob);
+  } catch (error) {
+    console.error(error);
+    alert(error.message || "Не удалось выгрузить КП. Повторите попытку.");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Выгрузить КП";
+  }
+});
+document.querySelector("#downloadContractButton")?.addEventListener("click", async () => {
   if (!validateBeforeDownload()) return;
   const data = collectData();
   try {
@@ -2804,6 +2922,7 @@ form.addEventListener("change", (event) => {
     recalculate();
   }
 });
+if (IS_PROPOSAL_PAGE) form.addEventListener("submit", (event) => event.preventDefault());
 
 async function initApp() {
   await window.ManagerAuth.ready;
@@ -2813,7 +2932,8 @@ async function initApp() {
   addTechDescription();
   renderSellerDetails();
   toggleFinalPaymentTiming();
-  loadDraft();
+  if (IS_PROPOSAL_PAGE) setField("managerName", window.ManagerAuth.user?.fullName || "");
+  else loadDraft();
 }
 
 initApp();

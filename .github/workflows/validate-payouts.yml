@@ -40,7 +40,8 @@ jobs:
           php tests/bitrix-php.php
           node --check payouts.js
           node --check payouts-table.js
-          node --test tests/payouts.test.cjs tests/bitrix.test.cjs
+          node --check app.js
+          node --test tests/payouts.test.cjs tests/bitrix.test.cjs tests/proposal.test.cjs
       - name: PHP MySQL migration and API tests on disposable database
         env:
           PAYOUT_TEST_MYSQL: '1'
