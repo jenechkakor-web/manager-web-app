@@ -105,7 +105,7 @@ check_bitrix($adopted['registryMeta']['bitrix']['dealId'] === '17002', 'Existing
 $audit = json_decode($pdo->query("SELECT previous_json FROM manager_bitrix_refresh_history WHERE record_number = '17002'")->fetchColumn(),true);
 check_bitrix($audit['record'] === $manualRow, 'Full previous database row backed up');
 $remote['deal']['OPPORTUNITY'] = '200000';
-check_bitrix(bitrix_refresh_record($pdo,$config,'17002',$runId,1,$call) === $result, 'Same run replay does not apply another snapshot');
+check_bitrix(json_encode(bitrix_refresh_record($pdo,$config,'17002',$runId,1,$call)) === json_encode($result), 'Same run replay returns the identical API response');
 check_bitrix(fetch_record($pdo,['id'=>1,'role'=>'admin'],'17002')['amount'] == 100000, 'Replay keeps original result');
 bitrix_sync($pdo,$config,'17002',$call);
 check_bitrix(fetch_record($pdo,['id'=>1,'role'=>'admin'],'17002')['amount'] == 200000, 'Future events update adopted records');
