@@ -645,6 +645,11 @@ try {
             $admin = require_admin($pdo);
             respond(['entry' => payout_append($pdo, request_json(), $admin)]);
         }
+        if ($method === 'DELETE') {
+            require_same_origin();
+            $admin = require_admin($pdo);
+            respond(payout_delete($pdo, request_json(), $admin));
+        }
         respond(['error' => 'Метод не поддерживается.'], 405);
     }
     if ($route === 'contracts-registry' && $method === 'GET') {
@@ -681,6 +686,9 @@ try {
             $previous = ['amount' => (float) $row['amount'], 'registryMeta' => normalize_registry_meta(
                 ['registryMeta' => is_array($currentMeta) ? $currentMeta : []], is_array($data) ? $data : [], (float) $row['amount'])];
             $fields = isset($body['fields']) && is_array($body['fields']) ? $body['fields'] : [];
+            if ($previous['registryMeta']['paymentStatus'] === 'Предоплата' && payout_value($fields, 'paymentStatus') === 'Да') {
+                $fields['prepayment'] = (float) $row['amount'];
+            }
             $mergedFields = array_merge(is_array($currentMeta) ? $currentMeta : [], $fields);
             if (array_key_exists('prepayment', $fields)) {
                 $mergedFields['prepaymentOverridden'] = true;

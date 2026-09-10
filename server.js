@@ -235,7 +235,16 @@ async function handleApi(req, res, url) {
     const users = await readJson(usersPath);
     if (req.method === "GET") {
       const records = (await readJson(registryPath)).map(record => normalizeRecord(record)).filter(Boolean);
-      sendJson(res, 200, buildReport(records, users, await payoutStore.read(), user, url.searchParams));
+      sendJson(res, 200, buildReport(records, users, await payoutStore.read(), user, url.searchParams,
+        (await payoutStore.readDeletions()).map(entry => entry.id)));
+      return;
+    }
+    if (req.method === "DELETE") {
+      const admin = await requireAdmin(req);
+      const origin = req.headers.origin;
+      if (origin && new URL(origin).host !== req.headers.host) throw Object.assign(new Error("Запрещённый источник запроса."), { status: 403 });
+      const records = (await readJson(registryPath)).map(record => normalizeRecord(record)).filter(Boolean);
+      sendJson(res, 200, await payoutStore.remove(await readJsonBody(req), records, users, admin));
       return;
     }
     if (req.method === "POST") {
@@ -400,6 +409,9 @@ async function handleApi(req, res, url) {
           throw Object.assign(new Error("Нельзя изменить договор другого пользователя."), { status: 403 });
         }
         const fields = body.fields && typeof body.fields === "object" ? body.fields : {};
+        if (existing.registryMeta.paymentStatus === "Предоплата" && fields.paymentStatus === "Да") {
+          fields.prepayment = existing.amount;
+        }
         const mergedFields = { ...existing.registryMeta, ...fields };
         if (Object.prototype.hasOwnProperty.call(fields, "prepayment")) mergedFields.prepaymentOverridden = true;
         const nextRegistryMeta = normalizeRegistryMeta(

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Реестр выплат</title>
   <link rel="stylesheet" href="styles.css?v=20260909-payouts" />
-  <link rel="stylesheet" href="payouts.css?v=20260909-planned" />
+  <link rel="stylesheet" href="payouts.css?v=20260910-transactions" />
 </head>
 <body class="payouts-page">
 <main class="app-shell"><section class="workspace">
@@ -51,7 +51,7 @@
           <div class="payout-table-wrap"><table class="payout-table"><thead><tr><th>Менеджер</th><th>Выручка за период</th><th>Планируемые за период</th><th>Начислено за период</th><th>Выплачено за период</th><th>Остаток за всё время</th></tr></thead><tbody id="managerRows"></tbody></table></div>
         </section>
         <section><div class="payout-section-title"><h2>Сделки и операции</h2><span>Закрытые сделки с бонусом, ручные начисления и выплаты</span></div>
-          <div class="payout-table-wrap"><table id="operationsTable" class="payout-table payout-interactive-table"><colgroup></colgroup><thead></thead><tbody id="entryRows"></tbody></table></div>
+          <div class="payout-table-wrap payout-operations-wrap"><table id="operationsTable" class="payout-table payout-interactive-table"><colgroup></colgroup><thead></thead><tbody id="entryRows"></tbody></table></div>
         </section>
       </div>
     </div>
@@ -70,6 +70,6 @@
   </form>
 </dialog>
 <script src="auth.js?v=20260909-payouts"></script>
-<script src="payouts-table.js?v=20260909-columns"></script>
-<script src="payouts.js?v=20260909-current-month"></script>
+<script src="payouts-table.js?v=20260910-transactions"></script>
+<script src="payouts.js?v=20260910-transactions"></script>
 </body></html>

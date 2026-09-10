@@ -6,6 +6,7 @@
   const currentMonth = () => new Intl.DateTimeFormat('sv-SE', { timeZone:'Europe/Moscow' }).format(new Date()).slice(0, 7);
   let report, requestNumber = 0, operationKind, requestId, saving = false, operationsTable;
   let appliedQuery = '';
+  let deleting = false;
   async function api(query = '', options = {}) {
     const response = await fetch(`/api/payouts${query}`, { cache:'no-store', ...options });
     if (response.status === 401) { window.location.href = 'login.html?next=%2Fpayouts.html'; throw new Error('Требуется вход.'); }
@@ -67,6 +68,29 @@
   });
   $('resetFilters').addEventListener('click', () => { $('filters').reset(); void load(''); });
   $('refresh').addEventListener('click', () => void load());
+  $('operationsTable').addEventListener('click', async event => {
+    const button = event.target.closest('[data-delete-payout]');
+    if (!button || !window.ManagerAuth.isAdmin || deleting) return;
+    const entry = report?.entries.find(item => item.id === button.dataset.deletePayout);
+    if (!entry) return;
+    const detail = entry.kind === 'deal'
+      ? `Удалить начисление ${money(entry.accrued)} по сделке ${entry.number}? Договор и его сумма в выручке сохранятся.`
+      : entry.kind === 'payment' ? `Удалить выплату ${money(entry.paid)}? Остаток к выплате увеличится на эту сумму.`
+      : `Удалить начисление ${money(entry.accrued)} (${entry.reason})? Остаток к выплате уменьшится на эту сумму.`;
+    if (!window.confirm(`${detail}\nМенеджер: ${entry.manager}.\nДата транзакции: ${date(entry.date)}.`)) return;
+    deleting = true;
+    $('operationsTable').querySelectorAll('[data-delete-payout]').forEach(control => { control.disabled = true; });
+    $('status').textContent = 'Удаляю транзакцию…';
+    try {
+      await api('', { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id:entry.id}) });
+      const loaded = await load();
+      $('status').textContent = loaded ? 'Транзакция удалена. Итоги пересчитаны.' : 'Транзакция удалена, но обновить итоги не удалось. Нажмите «Обновить».';
+    } catch (error) { $('status').textContent = error.message; }
+    finally {
+      deleting = false;
+      $('operationsTable').querySelectorAll('[data-delete-payout]').forEach(control => { control.disabled = false; });
+    }
+  });
   function open(kind) {
     if (!window.ManagerAuth.isAdmin || !report) return;
     operationKind = kind;

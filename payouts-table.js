@@ -11,6 +11,7 @@
     { id:'paid', label:'Выплачено', width:150, numeric:true, tone:'debit', value:entry => entry.paid },
     { id:'reason', label:'Основание', width:210, value:entry => entry.kind === 'deal' ? 'Выплата по сделке' : (entry.reason || null) },
     { id:'manager', label:'Менеджер', width:170, admin:true, value:entry => entry.manager },
+    { id:'delete', label:'Удаление', width:115, admin:true, action:true, value:() => null },
   ];
   window.createPayoutTable = (table, auth) => {
     const available = columns.filter(column => !column.admin || auth.isAdmin);
@@ -22,7 +23,7 @@
     if (!Array.isArray(saved.order) || !saved.order.includes('date')) order = ['date', ...order.filter(id => id !== 'date')];
     const widths = Object.fromEntries(available.map(column => [column.id,
       Number.isFinite(saved.widths?.[column.id]) ? Math.max(64, Math.min(10000,saved.widths[column.id])) : column.width]));
-    let sort = byId.has(saved.sort?.id) ? { id:saved.sort.id, direction:saved.sort.direction === -1 ? -1 : 1 } : null;
+    let sort = byId.has(saved.sort?.id) && !byId.get(saved.sort.id).action ? { id:saved.sort.id, direction:saved.sort.direction === -1 ? -1 : 1 } : null;
     let entries = [];
     const collator = new Intl.Collator('ru', { numeric:true, sensitivity:'base' });
     const head = table.tHead;
@@ -34,7 +35,9 @@
       return value == null ? (column.date ? 'Дата не зафиксирована' : '—') : column.date ? value.split('-').reverse().join('.') : column.numeric ? money(value) : String(value);
     };
     function layout() {
-      table.style.width = `${order.reduce((sum,id) => sum + widths[id],0)}px`;
+      const width = order.reduce((sum,id) => sum + widths[id],0);
+      table.style.width = `${width}px`;
+      table.parentElement.style.width = `${width + 2}px`;
       colgroup.querySelectorAll('col').forEach(col => { col.style.width = `${widths[col.dataset.column]}px`; });
     }
     function renderRows() {
@@ -49,6 +52,7 @@
       }
       body.innerHTML = rows.map(entry => `<tr>${order.map(id => {
         const column = byId.get(id), text = display(column,entry);
+        if (column.action) return `<td data-column="delete" class="payout-action"><button type="button" class="payout-delete" data-delete-payout="${escape(entry.id)}" title="Удалить транзакцию" aria-label="Удалить транзакцию">×</button></td>`;
         return `<td data-column="${id}" class="${column.numeric ? 'amount' : ''} ${column.tone || ''}" title="${escape(text)}">${escape(text)}</td>`;
       }).join('')}</tr>`).join('') || `<tr><td class="payout-empty" colspan="${order.length}">За выбранный период нет закрытых сделок с бонусом и операций.</td></tr>`;
     }
@@ -56,6 +60,7 @@
       colgroup.innerHTML = order.map(id => `<col data-column="${id}">`).join('');
       head.innerHTML = `<tr>${order.map(id => {
         const column = byId.get(id), active = sort?.id === id;
+        if (column.action) return `<th data-column="${id}" scope="col"><button type="button" class="payout-drag" data-drag="${id}" title="Перетащить столбец" aria-label="Переместить столбец ${column.label}">⋮⋮</button><span class="payout-header-label">${column.label}</span><span class="payout-resize" data-resize="${id}" role="separator" aria-orientation="vertical" aria-label="Ширина столбца ${column.label}" tabindex="0" title="Перетащите границу. Двойной клик — автоподбор ширины."></span></th>`;
         return `<th data-column="${id}" scope="col" aria-sort="${active ? (sort.direction === 1 ? 'ascending' : 'descending') : 'none'}"><button type="button" class="payout-drag" data-drag="${id}" title="Перетащить столбец. С клавиатуры: Alt + стрелки." aria-label="Переместить столбец ${column.label}">⋮⋮</button><button type="button" class="payout-sort" data-sort="${id}" title="Сортировать: ${column.label}"><span>${column.label}</span><span aria-hidden="true">${active ? (sort.direction === 1 ? '↑' : '↓') : '↕'}</span></button><span class="payout-resize" data-resize="${id}" role="separator" aria-orientation="vertical" aria-label="Ширина столбца ${column.label}" tabindex="0" title="Перетащите границу. Двойной клик — автоподбор ширины."></span></th>`;
       }).join('')}</tr>`;
       layout();
@@ -73,7 +78,7 @@
         return measurement.getBoundingClientRect().width;
       };
       const column = byId.get(id);
-      let width = measure(column.label, head.querySelector(`[data-sort="${id}"]`)) + 60;
+      let width = measure(column.label, head.querySelector(`[data-sort="${id}"]`) || head.querySelector(`[data-column="${id}"]`)) + (column.action ? 42 : 60);
       const target = body.querySelector(`td[data-column="${id}"]`) || table;
       for (const entry of entries) width = Math.max(width,measure(display(column,entry),target) + 22);
       measurement.remove();

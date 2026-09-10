@@ -34,6 +34,13 @@ function initialize_payout_database(PDO $pdo)
     $pdo->exec("CREATE TABLE IF NOT EXISTS manager_payout_migrations (
         version INT NOT NULL PRIMARY KEY, completed_at VARCHAR(40) NOT NULL, backup_manifest LONGTEXT NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    // Append-only cancellation journal. Original contracts and ledger entries are preserved.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS manager_payout_deletions (
+        entry_key CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
+        entry_id VARCHAR(255) NOT NULL, deleted_at VARCHAR(40) NOT NULL,
+        deleted_by INT UNSIGNED NOT NULL, deleted_by_login VARCHAR(64) NOT NULL,
+        snapshot_json LONGTEXT NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     if ($pdo->query('SELECT COUNT(*) FROM manager_payout_migrations WHERE version = 1')->fetchColumn()) return;
     $lock = 'manager_payout_schema_' . $pdo->query('SELECT DATABASE()')->fetchColumn();
     $statement = $pdo->prepare('SELECT GET_LOCK(?, 30)');
@@ -155,8 +162,9 @@ function payout_serialize(array $total)
     return ['revenue' => $total['revenue'] / 100, 'planned' => $total['planned'] / 100, 'accrued' => $total['accrued'] / 100,
         'paid' => $total['paid'] / 100, 'balance' => ($total['accrued'] - $total['paid']) / 100];
 }
-function payout_build_report(array $records, array $users, array $ledger, array $user, array $query)
+function payout_build_report(array $records, array $users, array $ledger, array $user, array $query, array $deletedIds = [])
 {
+    $deleted = array_fill_keys($deletedIds, true);
     foreach (['from', 'to', 'month', 'manager'] as $key) if (isset($query[$key]) && !is_string($query[$key])) throw new InvalidArgumentException('Некорректный фильтр.');
     $from = payout_value($query, 'from'); $to = payout_value($query, 'to'); $month = payout_value($query, 'month');
     if ($month !== '') {
@@ -177,7 +185,7 @@ function payout_build_report(array $records, array $users, array $ledger, array 
         $entries[] = array_merge($common, ['id' => 'sale:' . $record['number'], 'kind' => 'sale', 'date' => $record['date'],
             'reason' => 'Сумма сделки', 'revenue' => $planned ? 0 : payout_cents($record['amount']),
             'planned' => $planned ? payout_cents($record['amount']) : 0, 'accrued' => 0, 'paid' => 0]);
-        if (!payout_eligible($record)) continue;
+        if (!payout_eligible($record) || isset($deleted['deal:' . $record['number']])) continue;
         $date = empty($record['bonusQualifiedAt']) ? '' : (new DateTimeImmutable($record['bonusQualifiedAt']))->setTimezone(new DateTimeZone('Europe/Moscow'))->format('Y-m-d');
         $entries[] = array_merge($common, ['id' => 'deal:' . $record['number'], 'kind' => 'deal', 'date' => $date,
             'title' => $record['registryMeta']['title'] ?: 'Без названия', 'counterparty' => $record['counterparty'],
@@ -186,7 +194,7 @@ function payout_build_report(array $records, array $users, array $ledger, array 
             'paymentStatus' => $record['registryMeta']['paymentStatus'], 'closingDocs' => $record['registryMeta']['closingDocs']]);
     }
     foreach ($ledger as $entry) {
-        if (!$inScope($entry['managerId'])) continue;
+        if (!$inScope($entry['managerId']) || isset($deleted[$entry['id']])) continue;
         $entries[] = ['id' => $entry['id'], 'kind' => $entry['kind'], 'date' => $entry['date'], 'managerId' => $entry['managerId'],
             'manager' => payout_value($names, $entry['managerId'], $entry['managerLogin']),
             'title' => $entry['kind'] === 'payment' ? 'Выплата бонусов' : 'Дополнительное начисление',
@@ -240,5 +248,30 @@ function payout_report(PDO $pdo, array $user, array $query)
     if ($user['role'] !== 'admin') $sql .= ' WHERE manager_id = ?';
     $statement = $pdo->prepare($sql); $statement->execute($params);
     $ledger = array_map('payout_ledger_entry', $statement->fetchAll());
-    return payout_build_report($records, fetch_users($pdo), $ledger, $user, $query);
+    $deletedIds = $pdo->query('SELECT entry_id FROM manager_payout_deletions')->fetchAll(PDO::FETCH_COLUMN);
+    return payout_build_report($records, fetch_users($pdo), $ledger, $user, $query, $deletedIds);
+}
+
+function payout_delete(PDO $pdo, array $body, array $admin)
+{
+    if ($admin['role'] !== 'admin') respond(['error' => 'Недостаточно прав.'], 403);
+    $id = payout_value($body, 'id');
+    if (!is_string($id) || !preg_match('/^.{1,255}$/us', $id)) respond(['error' => 'Некорректный идентификатор операции.'], 400);
+    $key = hash('sha256', $id);
+    $statement = $pdo->prepare('SELECT entry_id FROM manager_payout_deletions WHERE entry_key = ?');
+    $statement->execute([$key]);
+    if ($statement->fetchColumn() !== false) return ['deleted' => true, 'id' => $id];
+    $report = payout_report($pdo, $admin, []);
+    $snapshot = null;
+    foreach ($report['entries'] as $entry) {
+        if ($entry['id'] === $id && (in_array($entry['kind'], ['payment', 'accrual'], true) || ($entry['kind'] === 'deal' && $entry['accrued'] > 0))) {
+            $snapshot = $entry; break;
+        }
+    }
+    if (!$snapshot) respond(['error' => 'Транзакция не найдена. Обновите реестр.'], 404);
+    $statement = $pdo->prepare('INSERT INTO manager_payout_deletions
+        (entry_key, entry_id, deleted_at, deleted_by, deleted_by_login, snapshot_json) VALUES (?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE entry_key = VALUES(entry_key)');
+    $statement->execute([$key, $id, gmdate('c'), $admin['id'], $admin['login'], json_encode($snapshot, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)]);
+    return ['deleted' => true, 'id' => $id];
 }

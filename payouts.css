@@ -20,6 +20,7 @@
 .payout-balances { display:flex; flex-wrap:wrap; gap:12px 24px; font-size:12px; padding:10px 0; border-block:1px solid var(--line); }
 .payout-notice { padding:10px; background:#fff6e6; border-left:3px solid #c8963e; font-size:12px; line-height:1.6; }
 .payout-table-wrap { overflow:auto; border:1px solid var(--line); margin-top:10px; }
+.payout-operations-wrap { box-sizing:border-box; max-width:100%; }
 .payout-table { width:100%; border-collapse:collapse; font-size:12px; }
 .payout-table th, .payout-table td { text-align:left; padding:8px 10px; border:1px solid var(--line); vertical-align:top; }
 .payout-table th { background:#edf3f3; white-space:nowrap; font-weight:600; }
@@ -34,6 +35,11 @@
 .payout-interactive-table th { position:relative; padding:0; height:35px; }
 .payout-interactive-table th:last-child, .payout-interactive-table td:last-child { border-right:0; }
 .payout-interactive-table button { border:0; border-radius:0; background:transparent; color:inherit; font:inherit; box-shadow:none; }
+.payout-interactive-table .payout-action { padding:4px 8px; text-align:center; }
+.payout-interactive-table .payout-delete { width:26px; height:26px; color:#b53737; cursor:pointer; font-size:18px; }
+.payout-interactive-table .payout-delete:hover, .payout-interactive-table .payout-delete:focus-visible { background:#fce9e9; outline:1px solid #dfa5a5; }
+.payout-interactive-table .payout-delete:disabled { opacity:.45; cursor:wait; }
+.payout-header-label { display:block; padding:8px 12px 8px 26px; overflow:hidden; text-overflow:ellipsis; }
 .payout-interactive-table .payout-sort { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 12px 8px 26px; width:100%; text-align:left; cursor:pointer; }
 .payout-sort span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .payout-sort span:last-child { color:var(--muted); flex-shrink:0; }

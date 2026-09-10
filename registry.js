@@ -777,7 +777,8 @@ async function commitEditor(control) {
     : field === "title"
       ? control.value.trim()
       : control.value;
-  if (field === "paymentStatus" && value === "Да" && hasPaymentRemainder(record)) {
+  const paidInFull = field === "paymentStatus" && value === "Да" && previousMeta.paymentStatus === "Предоплата";
+  if (field === "paymentStatus" && value === "Да" && !paidInFull && hasPaymentRemainder(record)) {
     const message = `Нельзя поставить «Оплачен — Да»: по договору остаётся ${money(remainder(record))}. Сначала укажите полную оплату в поле «Предоплата».`;
     control.setCustomValidity(message);
     control.reportValidity();
@@ -801,14 +802,15 @@ async function commitEditor(control) {
   }
   control.setCustomValidity("");
   control.dataset.committing = "true";
-  record.registryMeta = { ...record.registryMeta, [field]: value };
+  const fields = paidInFull ? { paymentStatus: "Да", prepayment: record.amount } : { [field]: value };
+  record.registryMeta = { ...record.registryMeta, ...fields };
   editingCell = null;
   setStatus(`Сохраняю изменения по сделке ${displayRecordNumber(record)}...`);
   setTimeout(() => {
     if (!editingCell) render();
   }, 0);
   try {
-    const result = await window.ContractRegistry.updateRegistryMeta(record.number, { [field]: value });
+    const result = await window.ContractRegistry.updateRegistryMeta(record.number, fields);
     if (result.records.length) records = result.records;
     const currentRecord = records.find((item) => item.number === record.number);
     if (result.record && currentRecord) currentRecord.registryMeta = result.record.registryMeta;
@@ -1244,7 +1246,7 @@ tableBody.addEventListener("change", (event) => {
   if (editor.dataset.registryField === "paymentStatus") {
     const row = editor.closest("tr[data-number]");
     const record = records.find((item) => item.number === row?.dataset.number);
-    if (record && editor.value === "Да" && hasPaymentRemainder(record)) {
+    if (record && record.registryMeta.paymentStatus !== "Предоплата" && editor.value === "Да" && hasPaymentRemainder(record)) {
       const message = `Нельзя поставить «Оплачен — Да»: по договору остаётся ${money(remainder(record))}. Сначала укажите полную оплату в поле «Предоплата».`;
       editor.setCustomValidity(message);
       editor.reportValidity();

@@ -35,7 +35,8 @@ function bonusCents(record) {
   return Math.round(cents(record.amount) * percent / 100);
 }
 
-function buildReport(records, users, ledger, user, query) {
+function buildReport(records, users, ledger, user, query, deletedIds = []) {
+  const deleted = new Set(deletedIds);
   let from = query.get('from') || '';
   let to = query.get('to') || '';
   const month = query.get('month') || '';
@@ -55,7 +56,7 @@ function buildReport(records, users, ledger, user, query) {
   const owner = user.role === 'admin' ? (manager ? Number(manager) : null) : user.id;
   const inScope = id => owner === null || id === owner;
   const visibleRecords = records.filter(record => inScope(record.ownerId));
-  const visibleLedger = ledger.filter(entry => inScope(entry.managerId));
+  const visibleLedger = ledger.filter(entry => inScope(entry.managerId) && !deleted.has(entry.id));
   const names = new Map(users.map(item => [item.id, item.login]));
   const entries = visibleRecords.flatMap(record => {
     const common = { managerId: record.ownerId, manager: names.get(record.ownerId) || 'Удалённый пользователь',
@@ -64,7 +65,7 @@ function buildReport(records, users, ledger, user, query) {
     const sale = { ...common, id: `sale:${record.number}`, kind: 'sale', date: record.date,
       reason: 'Сумма сделки', revenue: planned ? 0 : cents(record.amount),
       planned: planned ? cents(record.amount) : 0, accrued: 0, paid: 0 };
-    if (!isEligible(record)) return [sale];
+    if (!isEligible(record) || deleted.has(`deal:${record.number}`)) return [sale];
     const accruedDate = record.bonusQualifiedAt
       ? new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Moscow' }).format(new Date(record.bonusQualifiedAt)) : '';
     return [sale, {
@@ -116,7 +117,42 @@ function buildReport(records, users, ledger, user, query) {
 
 function createPayoutStore(dataDir) {
   const file = path.join(dataDir, 'bonus-ledger.json');
+  const deletedFile = path.join(dataDir, 'payout-deletions.json');
   let queue = Promise.resolve();
+  async function readDeletions() {
+    try {
+      const entries = JSON.parse(await fs.readFile(deletedFile, 'utf8'));
+      if (!Array.isArray(entries)) throw new Error('Некорректный журнал удаления выплат.');
+      return entries;
+    } catch (error) {
+      if (error.code === 'ENOENT') return [];
+      throw error;
+    }
+  }
+  function remove(body, records, users, admin) {
+    const operation = queue.then(async () => {
+      if (admin.role !== 'admin') throw fail('Недостаточно прав.', 403);
+      if (typeof body.id !== 'string' || !body.id || body.id.length > 255) throw fail('Некорректный идентификатор операции.');
+      const deletions = await readDeletions();
+      if (deletions.some(entry => entry.id === body.id)) return { deleted: true, id: body.id };
+      const report = buildReport(records, users, await read(), admin, new URLSearchParams());
+      const snapshot = report.entries.find(entry => entry.id === body.id &&
+        (['accrual', 'payment'].includes(entry.kind) || (entry.kind === 'deal' && entry.accrued > 0)));
+      if (!snapshot) throw fail('Транзакция не найдена. Обновите реестр.', 404);
+      const deletion = { id: body.id, deletedAt: new Date().toISOString(), deletedBy: admin.id,
+        deletedByLogin: admin.login, snapshot };
+      const backupDir = path.join(dataDir, 'payout-backups');
+      await fs.mkdir(backupDir, { recursive: true });
+      const suffix = `${Date.now()}-${crypto.randomUUID()}`;
+      await fs.writeFile(path.join(backupDir, `deletions-${suffix}.json`), JSON.stringify(deletions), { flag: 'wx' });
+      const temporary = `${deletedFile}.${suffix}.tmp`;
+      await fs.writeFile(temporary, JSON.stringify([...deletions, deletion], null, 2), { flag: 'wx' });
+      await fs.rename(temporary, deletedFile);
+      return { deleted: true, id: body.id };
+    });
+    queue = operation.catch(() => {});
+    return operation;
+  }
   async function read() {
     try {
       const entries = JSON.parse(await fs.readFile(file, 'utf8'));
@@ -163,7 +199,7 @@ function createPayoutStore(dataDir) {
     queue = operation.catch(() => {});
     return operation;
   }
-  return { read, append };
+  return { read, append, readDeletions, remove };
 }
 
 module.exports = { createPayoutStore, buildReport, bonusCents, today, stampQualification, isEligible };
