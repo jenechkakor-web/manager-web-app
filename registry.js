@@ -52,6 +52,7 @@ const tableScaleOutput = document.querySelector("#registryScaleOutput");
 let records = [];
 let managerUsers = [];
 let selectedManager = '';
+let initialMonthFilter = true;
 let editingCell = null;
 let sortState = { field: "date", direction: "desc" };
 let appliedDateRange = { from: "", to: "" };
@@ -348,7 +349,8 @@ function setFilterOptions(select, values, allLabel, labelFormatter = (value) => 
 }
 
 function renderFilterOptions() {
-  const months = [...new Set(records.map((record) => String(record.date || "").slice(0, 7)).filter((value) => /^\d{4}-\d{2}$/.test(value)))]
+  const currentMonth = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Moscow" }).format(new Date()).slice(0, 7);
+  const months = [...new Set([currentMonth, ...records.map((record) => String(record.date || "").slice(0, 7)).filter((value) => /^\d{4}-\d{2}$/.test(value))])]
     .sort((a, b) => b.localeCompare(a));
   const managers = [...new Set(records.map((record) => record.ownerLogin || "admin"))].sort((a, b) => a.localeCompare(b, "ru"));
   const sourceOptions = [...new Set([
@@ -356,6 +358,10 @@ function renderFilterOptions() {
     ...window.ContractRegistry.SOURCE_OPTIONS, ...records.map(record => record.registryMeta.source).filter(Boolean),
   ])];
   setFilterOptions(monthFilter, months, "Все месяцы", formatMonth);
+  if (initialMonthFilter) {
+    monthFilter.value = currentMonth;
+    initialMonthFilter = false;
+  }
   setFilterOptions(sourceFilter, sourceOptions, "Все источники", (value) => (value === EMPTY_SOURCE_FILTER ? "Не указано" : value));
   setFilterOptions(paymentStatusFilter, window.ContractRegistry.PAYMENT_STATUS_OPTIONS, "Все варианты");
   setFilterOptions(dealStatusFilter, ["Планируется", "В работе", "Завершена"], "Все статусы");
