@@ -43,7 +43,7 @@ test('Б24: все стадии, создатель, фактическая оп
   assert.equal(unknown.registryMeta.bitrix.unmappedStage,true);assert.equal(bonusCents(unknown),0);
 });
 
-test('Б24: только восемь имён и единственное существующее ФИО', () => {
+test('Б24: только разрешённые имена и единственное существующее ФИО', () => {
   for(const name of bitrix.rules.managers) {
     const [NAME,LAST_NAME]=name.split(' '), user={id:9,login:'linked',fullName:name};
     assert.equal(bitrix.resolveManager({ID:'99',NAME,LAST_NAME},[user],{}).id,9);
@@ -52,6 +52,11 @@ test('Б24: только восемь имён и единственное су�
   assert.equal(bitrix.resolveManager(snapshot.creator,[users[1],{...users[1],id:7}],config),null);
   assert.equal(bitrix.resolveManager({ID:'999',NAME:'Посторонний',LAST_NAME:'Сотрудник'},users,config),null);
   assert.equal(bitrix.resolveManager(snapshot.creator,users,{...config,managers:{'Антон Исаков':{login:'anton',bitrixId:'999'}}}),null);
+  const alexey = {ID:'1',NAME:'Алексей',LAST_NAME:'Купоров'};
+  const admin = {...users[0], fullName:'Алексей Купоров'};
+  assert.equal(bitrix.resolveManager(alexey,[admin],config).id,1);
+  assert.equal(bitrix.resolveManager(alexey,users,config),null);
+  assert.equal(bitrix.resolveManager({ID:'24',NAME:'Алексей',LAST_NAME:'Болдов'},[admin],config),null);
 });
 
 test('Б24: подпись, домен, ошибки данных и защита полей от подделки', async () => {

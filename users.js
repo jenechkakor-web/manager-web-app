@@ -240,7 +240,7 @@ bitrixSyncForm.addEventListener("submit", async event => {
   bitrixStatus.textContent = "Синхронизирую сделку…";
   try {
     const result = await bitrixRequest("sync", { dealId: bitrixSyncForm.elements.dealId.value.trim() });
-    const skipped = { manager_not_allowed_or_unmapped: "Создатель сделки не связан с одним из восьми менеджеров.", record_deleted: "Запись ранее удалена из реестра.", stale_snapshot: "В реестре уже сохранены более свежие данные." };
+    const skipped = { manager_not_allowed_or_unmapped: "Создатель сделки не связан с разрешённым пользователем приложения.", record_deleted: "Запись ранее удалена из реестра.", stale_snapshot: "В реестре уже сохранены более свежие данные." };
     bitrixStatus.textContent = result.synced ? `Сделка ${result.number}: ${result.dealStatus}.${result.unmappedStage ? " Стадия Б24 не сопоставлена." : ""}` : skipped[result.skipped] || "Сделка пропущена.";
   } catch (error) { bitrixStatus.textContent = error.message; }
   finally { button.disabled = false; }

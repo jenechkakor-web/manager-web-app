@@ -27,6 +27,11 @@ check_bitrix(bitrix_manager($snapshot['creator'], [], $config) === null, 'Missin
 $duplicates = $users; $duplicates[] = $users[1];
 check_bitrix(bitrix_manager($snapshot['creator'], $duplicates, $config) === null, 'Ambiguous account');
 check_bitrix(bitrix_manager(['ID'=>'999','NAME'=>'Посторонний','LAST_NAME'=>'Сотрудник'], $users, $config) === null, 'Non-allowlisted account');
+$alexey = ['ID'=>'1','NAME'=>'Алексей','LAST_NAME'=>'Купоров'];
+$linkedAdmin = $users[0]; $linkedAdmin['fullName'] = 'Алексей Купоров';
+check_bitrix(bitrix_manager($alexey, [$linkedAdmin], $config)['id'] === 1, 'Alexey Kuporov maps to existing admin by full name');
+check_bitrix(bitrix_manager($alexey, $users, $config) === null, 'Admin role without matching full name does not grant mapping');
+check_bitrix(bitrix_manager(['ID'=>'24','NAME'=>'Алексей','LAST_NAME'=>'Болдов'], [$linkedAdmin], $config) === null, 'Other Alexey is not allowlisted');
 $event = ['event'=>'ONCRMDEALADD','auth'=>['domain'=>'portal.example','application_token'=>$config['eventToken']],'data'=>['FIELDS'=>['ID'=>'17000']]];
 check_bitrix(bitrix_authenticate($event, $config) === '17000', 'Valid event');
 $settings = bitrix_updated_config($config, ['webhookUrl'=>'','eventToken'=>'','paidAmountField'=>'UF_PAID']);
