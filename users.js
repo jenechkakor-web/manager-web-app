@@ -1,6 +1,8 @@
 const createUserForm = document.querySelector("#createUserForm");
 const newUserLogin = document.querySelector("#newUserLogin");
 const newUserFullName = document.querySelector("#newUserFullName");
+const newUserPhone = document.querySelector("#newUserPhone");
+const newUserEmail = document.querySelector("#newUserEmail");
 const newUserPassword = document.querySelector("#newUserPassword");
 const newUserRole = document.querySelector("#newUserRole");
 const createUserButton = document.querySelector("#createUserButton");
@@ -67,7 +69,15 @@ function renderUsers() {
               <span>ФИО</span>
               <input data-user-full-name maxlength="191" autocomplete="off" placeholder="Имя Фамилия, как в Б24" value="${escapeHtml(user.fullName)}" />
             </label>
-            <button class="button ghost" type="button" data-save-profile>Сохранить ФИО</button>
+            <label>
+              <span>Телефон</span>
+              <input data-user-phone type="tel" maxlength="64" autocomplete="off" placeholder="+7 (999) 123-45-67" value="${escapeHtml(user.phone)}" />
+            </label>
+            <label>
+              <span>Почта</span>
+              <input data-user-email type="email" maxlength="254" autocomplete="off" placeholder="name@verkup.ru" value="${escapeHtml(user.email)}" />
+            </label>
+            <button class="button ghost" type="button" data-save-profile>Сохранить данные</button>
           </div>
           <label>
             <span>Права</span>
@@ -111,6 +121,8 @@ createUserForm.addEventListener("submit", async (event) => {
       body: JSON.stringify({
         login: newUserLogin.value.trim(),
         fullName: newUserFullName.value.trim(),
+        phone: newUserPhone.value.trim(),
+        email: newUserEmail.value.trim(),
         password: newUserPassword.value,
         role: newUserRole.value,
       }),
@@ -145,11 +157,15 @@ usersList.addEventListener("click", async (event) => {
   const profileButton = event.target.closest("[data-save-profile]");
   if (profileButton) {
     const row = profileButton.closest("[data-user-id]");
-    const input = row.querySelector("[data-user-full-name]");
+    const inputs = { fullName: row.querySelector("[data-user-full-name]"), phone: row.querySelector("[data-user-phone]"), email: row.querySelector("[data-user-email]") };
+    for (const input of Object.values(inputs)) {
+      input.value = input.value.trim();
+      if (!input.reportValidity()) return;
+    }
     profileButton.disabled = true;
     try {
-      users = await apiRequest({ method: "PUT", body: JSON.stringify({ action: "profile", id: Number(row.dataset.userId), fullName: input.value.trim() }) });
-      setUsersStatus("ФИО сохранено. Оно используется для связи с Битрикс24.", "success");
+      users = await apiRequest({ method: "PUT", body: JSON.stringify({ action: "profile", id: Number(row.dataset.userId), ...Object.fromEntries(Object.entries(inputs).map(([key, input]) => [key, input.value])) }) });
+      setUsersStatus("ФИО и контакты сохранены.", "success");
       await loadBitrixStatus();
     } catch (error) {
       setUsersStatus(error.message, "error");

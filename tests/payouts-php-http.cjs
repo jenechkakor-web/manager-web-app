@@ -21,11 +21,21 @@ const crypto = require('node:crypto');
     const admin=await login('admin'), manager=await login('manager');
     const post=(route,body,cookie=admin,headers={})=>fetch(`${base}/api/${route}`,{method:'POST',headers:{cookie,'Content-Type':'application/json',...headers},body:JSON.stringify(body)});
     const get=(route,cookie=admin)=>fetch(`${base}/api/${route}`,{headers:{cookie}});
-    const profile={action:'profile',id:2,fullName:'Антон Исаков'};
+    const profile={action:'profile',id:2,fullName:'Антон Исаков',phone:'+7 (999) 123-45-67',email:'anton@example.test'};
     const updateProfile=cookie=>fetch(`${base}/api/users`,{method:'PUT',headers:{cookie,'Content-Type':'application/json'},body:JSON.stringify(profile)});
     assert.equal((await updateProfile(manager)).status,403);
     assert.equal((await updateProfile(admin)).status,200);
     assert.equal((await (await get('users')).json()).find(u=>u.id===2).fullName,'Антон Исаков');
+    const profilePatch=patch=>fetch(`${base}/api/users`,{method:'PUT',headers:{cookie:admin,'Content-Type':'application/json'},body:JSON.stringify({action:'profile',id:2,...patch})});
+    assert.equal((await profilePatch({fullName:'Антон Исаков'})).status,200);
+    const ownProfile=(await (await get('auth/session',manager)).json()).user;
+    assert.equal(ownProfile.email,'anton@example.test');assert.equal(ownProfile.phone,'+7 (999) 123-45-67');
+    assert.equal((await get('users',manager)).status,403);
+    for(const patch of [{email:'invalid'},{phone:'123'},{phone:['79991234567']},{email:'mail@example.test\n'}]) assert.equal((await profilePatch(patch)).status,400);
+    assert.equal((await profilePatch({email:' updated@example.test ',phone:' +7 999 765-43-21 '})).status,200);
+    assert.equal((await (await get('auth/session',manager)).json()).user.email,'updated@example.test');
+    assert.equal((await profilePatch({email:'',phone:''})).status,200);
+    assert.equal((await (await get('auth/session',manager)).json()).user.phone,'');
     assert.equal((await get('bitrix/status',manager)).status,403);
     assert.equal((await post('bitrix/config',{},manager)).status,403);
     assert.equal((await get('bitrix/refresh',manager)).status,403);
@@ -111,7 +121,12 @@ const crypto = require('node:crypto');
       assert.equal((await post('contracts-registry',{record:invoice},manager)).status,200);
       assert.equal((await (await get('contracts-registry?number='+invoice.number,manager)).json()).registryMeta.paymentType,'Наличка');
     }
-    console.log('PHP HTTP: authentication, ownership, ledger idempotence, dates, preservation passed');
+    const contactAccount={login:'contacts',password:'TestPassword2026',fullName:'Контакты менеджера',phone:'+7 (999) 123-45-67',email:'contacts@example.test'};
+    assert.equal((await post('users',contactAccount)).status,201);
+    const contacts=await login('contacts');
+    const createdProfile=(await (await get('auth/session',contacts)).json()).user;
+    assert.equal(createdProfile.phone,contactAccount.phone);assert.equal(createdProfile.email,contactAccount.email);
+    console.log('PHP HTTP: authentication, ownership, ledger idempotence, dates, preservation and user contacts passed');
   } catch(error) { console.error(logs); throw error; }
   finally {const exited=once(child,'exit');child.kill();await exited;}
 })().catch(error=>{console.error(error);process.exitCode=1;});

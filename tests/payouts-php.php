@@ -65,6 +65,12 @@ if (!getenv('PAYOUT_TEST_MYSQL')) exit;
 $config = ['db_host' => '127.0.0.1', 'db_name' => 'manager_payout_test', 'db_user' => 'root', 'db_password' => 'isolated-test-only',
     'admin_login' => 'admin', 'admin_password' => 'TestPassword2026'];
 $pdo = open_database($config);
+$pdo->exec("CREATE TABLE manager_users (id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, login VARCHAR(64) NOT NULL,
+    full_name VARCHAR(191) NOT NULL DEFAULT '', password_hash VARCHAR(255) NOT NULL, role VARCHAR(20) NOT NULL DEFAULT 'user',
+    created_at VARCHAR(40) NOT NULL, UNIQUE KEY unique_login (login)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+$pdo->prepare('INSERT INTO manager_users (login,full_name,password_hash,role,created_at) VALUES (?,?,?,?,?)')
+    ->execute(['admin','Администратор',password_hash('TestPassword2026', PASSWORD_DEFAULT),'admin','2026-06-01T00:00:00Z']);
+$userBefore = $pdo->query('SELECT * FROM manager_users')->fetch();
 $pdo->exec("CREATE TABLE manager_contracts (record_number VARCHAR(191) NOT NULL PRIMARY KEY, owner_id INT UNSIGNED NULL,
     contract_date VARCHAR(32) NOT NULL DEFAULT '', counterparty VARCHAR(255) NOT NULL DEFAULT '', amount DECIMAL(15,2) NOT NULL DEFAULT 0,
     status VARCHAR(20) NOT NULL DEFAULT 'draft', updated_at VARCHAR(40) NOT NULL, data_json LONGTEXT NOT NULL,
@@ -72,6 +78,9 @@ $pdo->exec("CREATE TABLE manager_contracts (record_number VARCHAR(191) NOT NULL 
 $pdo->prepare('INSERT INTO manager_contracts VALUES (?,?,?,?,?,?,?,?,?)')->execute(['EXISTING',1,'2026-06-15','Keep me',10000,'draft','2026-06-15T00:00:00Z','{"sentinel":"untouched","paymentTerms":100}',json_encode($record['registryMeta'])]);
 $before = $pdo->query('SELECT * FROM manager_contracts')->fetchAll();
 initialize_database($pdo, $config);
+$userAfter = $pdo->query('SELECT * FROM manager_users')->fetch();
+check(array_intersect_key($userAfter, $userBefore) === $userBefore, 'Contact migration changed existing account');
+check($userAfter['phone'] === '' && $userAfter['email'] === '', 'Contact migration defaults must be empty');
 $after = $pdo->query('SELECT * FROM manager_contracts')->fetchAll();
 check($before === $after, 'Migration changed existing contract');
 $manifest = json_decode($pdo->query('SELECT backup_manifest FROM manager_payout_migrations WHERE version = 1')->fetchColumn(), true);

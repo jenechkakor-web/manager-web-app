@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Пользователи</title>
-    <link rel="stylesheet" href="styles.css?v=20260911-bitrix-local-rules-1" />
+    <link rel="stylesheet" href="styles.css?v=20260911-user-contacts-1" />
   </head>
   <body>
     <main class="app-shell">
@@ -50,6 +50,14 @@
                   <input id="newUserFullName" name="new-account-full-name" autocomplete="off" maxlength="191" placeholder="Имя Фамилия, как в Б24" />
                 </label>
                 <label>
+                  <span>Телефон</span>
+                  <input id="newUserPhone" name="new-account-phone" type="tel" autocomplete="off" maxlength="64" placeholder="+7 (999) 123-45-67" />
+                </label>
+                <label>
+                  <span>Почта</span>
+                  <input id="newUserEmail" name="new-account-email" type="email" autocomplete="off" maxlength="254" placeholder="name@verkup.ru" />
+                </label>
+                <label>
                   <span>Права</span>
                   <select id="newUserRole">
                     <option value="user">Пользователь</option>
@@ -63,7 +71,7 @@
 
             <section class="panel">
               <div class="panel-title"><h2>Список пользователей</h2></div>
-              <p class="field-hint">Для связи с Битрикс24 укажите имя и фамилию, как в профиле сотрудника. Сделки закрепляются за их создателями.</p>
+              <p class="field-hint">Для связи с Битрикс24 укажите имя и фамилию, как в профиле сотрудника. ФИО, телефон и почта автоматически подставляются в форму КП этого менеджера.</p>
               <div class="users-list" id="usersList"></div>
             </section>
             <section class="panel">
@@ -101,6 +109,6 @@
       </section>
     </main>
     <script src="auth.js?v=20260702-deals-prod-1"></script>
-    <script src="users.js?v=20260911-bitrix-local-rules-1"></script>
+    <script src="users.js?v=20260911-user-contacts-1"></script>
   </body>
 </html>

@@ -2932,8 +2932,12 @@ async function initApp() {
   addTechDescription();
   renderSellerDetails();
   toggleFinalPaymentTiming();
-  if (IS_PROPOSAL_PAGE) setField("managerName", window.ManagerAuth.user?.fullName || "");
-  else loadDraft();
+  if (IS_PROPOSAL_PAGE) {
+    const manager = window.ManagerAuth.user;
+    for (const [field, value] of [["managerName", manager?.fullName], ["managerEmail", manager?.email], ["managerPhone", manager?.phone]]) {
+      if (!getField(field).value.trim()) setField(field, value || "");
+    }
+  } else loadDraft();
 }
 
 initApp();

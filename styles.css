@@ -2170,6 +2170,7 @@ fieldset {
   .user-row > label { grid-column: 2; grid-row: 1; }
   .user-row > [data-delete-user] { grid-column: 3; grid-row: 1; }
   .user-profile-action { grid-column: 1 / -1; grid-row: 2; }
+  .user-row > .user-profile-action { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
   .user-password-action { grid-column: 1 / -1; grid-row: 3; }
 }
 

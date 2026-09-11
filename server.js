@@ -199,7 +199,7 @@ async function ensureData() {
 }
 
 function publicUser(user) {
-  return { id: Number(user.id), login: user.login, fullName: user.fullName || "", role: user.role === "admin" ? "admin" : "user", createdAt: user.createdAt };
+  return { id: Number(user.id), login: user.login, fullName: user.fullName || "", phone: user.phone || "", email: user.email || "", role: user.role === "admin" ? "admin" : "user", createdAt: user.createdAt };
 }
 
 function fullName(value = "") {
@@ -207,6 +207,21 @@ function fullName(value = "") {
     throw Object.assign(new Error("ФИО: не более 191 символа, без управляющих символов."), { status: 400 });
   }
   return value.trim().replace(/\s+/gu, " ");
+}
+
+function userContact(value = "", field) {
+  const message = field === "email" ? "Укажите корректную почту." : "Укажите корректный телефон: от 7 до 20 цифр, можно использовать +, пробелы, скобки и дефисы.";
+  const fail = () => Object.assign(new Error(message), {status:400});
+  if (typeof value !== "string" || /[\x00-\x1f\x7f]/.test(value)) throw fail();
+  value = value.trim();
+  if (!value) return "";
+  if (field === "email") {
+    if (value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw fail();
+  } else {
+    const digits = value.replace(/[^0-9]/g, "").length;
+    if (value.length > 64 || !/^[+0-9(). -]+$/.test(value) || digits < 7 || digits > 20) throw fail();
+  }
+  return value;
 }
 
 function applyRegistryFields(previous, fields, user, users) {
@@ -512,6 +527,8 @@ async function handleApi(req, res, url) {
         id: Math.max(0, ...users.map((user) => user.id)) + 1,
         login,
         fullName: fullName(body.fullName),
+        phone: userContact(body.phone, "phone"),
+        email: userContact(body.email, "email"),
         passwordHash: hashPassword(password),
         role: body.role === "admin" ? "admin" : "user",
         createdAt: new Date().toISOString(),
@@ -524,7 +541,12 @@ async function handleApi(req, res, url) {
     if (!target) throw Object.assign(new Error("Пользователь не найден."), { status: 404 });
     if (req.method === "PUT") {
       if (body.action === "profile") {
-        target.fullName = fullName(body.fullName);
+        const profile = {
+          fullName: Object.hasOwn(body, "fullName") ? fullName(body.fullName) : target.fullName || "",
+          phone: Object.hasOwn(body, "phone") ? userContact(body.phone, "phone") : target.phone || "",
+          email: Object.hasOwn(body, "email") ? userContact(body.email, "email") : target.email || "",
+        };
+        Object.assign(target, profile);
         await writeJson(usersPath, users);
         sendJson(res, 200, users.map(publicUser).sort((a, b) => a.login.localeCompare(b.login)));
         return;

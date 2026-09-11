@@ -79,6 +79,8 @@ function initialize_database(PDO $pdo, array $config)
     $pdo->exec("CREATE TABLE IF NOT EXISTS manager_users (
         id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         login VARCHAR(64) NOT NULL,
+        phone VARCHAR(64) NOT NULL DEFAULT '',
+        email VARCHAR(254) NOT NULL DEFAULT '',
         password_hash VARCHAR(255) NOT NULL,
         role VARCHAR(20) NOT NULL DEFAULT 'user',
         created_at VARCHAR(40) NOT NULL,
@@ -87,6 +89,15 @@ function initialize_database(PDO $pdo, array $config)
 
     if (!has_column($pdo, 'manager_users', 'full_name')) {
         $pdo->exec("ALTER TABLE manager_users ADD COLUMN full_name VARCHAR(191) NOT NULL DEFAULT ''");
+    }
+    foreach (['phone' => 64, 'email' => 254] as $column => $length) {
+        if (!has_column($pdo, 'manager_users', $column)) {
+            try {
+                $pdo->exec("ALTER TABLE manager_users ADD COLUMN `$column` VARCHAR($length) NOT NULL DEFAULT ''");
+            } catch (PDOException $error) {
+                if (!has_column($pdo, 'manager_users', $column)) throw $error;
+            }
+        }
     }
 
     $adminLogin = trim((string) $config['admin_login']);
@@ -163,6 +174,8 @@ function public_user(array $row)
         'id' => (int) $row['id'],
         'login' => (string) $row['login'],
         'fullName' => isset($row['full_name']) ? (string) $row['full_name'] : '',
+        'phone' => isset($row['phone']) ? (string) $row['phone'] : '',
+        'email' => isset($row['email']) ? (string) $row['email'] : '',
         'role' => $row['role'] === 'admin' ? 'admin' : 'user',
         'createdAt' => isset($row['created_at']) ? (string) $row['created_at'] : '',
     ];
@@ -174,7 +187,7 @@ function current_user(PDO $pdo)
     if ($userId === 0) {
         return null;
     }
-    $statement = $pdo->prepare('SELECT id, login, full_name, role, created_at FROM manager_users WHERE id = :id LIMIT 1');
+    $statement = $pdo->prepare('SELECT id, login, full_name, phone, email, role, created_at FROM manager_users WHERE id = :id LIMIT 1');
     $statement->execute([':id' => $userId]);
     $row = $statement->fetch();
     if (!$row) {
@@ -473,7 +486,7 @@ function import_initial_presets(PDO $pdo)
 
 function fetch_users(PDO $pdo)
 {
-    $rows = $pdo->query('SELECT id, login, full_name, role, created_at FROM manager_users ORDER BY login')->fetchAll();
+    $rows = $pdo->query('SELECT id, login, full_name, phone, email, role, created_at FROM manager_users ORDER BY login')->fetchAll();
     return array_map('public_user', $rows);
 }
 
@@ -488,6 +501,21 @@ function validate_full_name($value)
         respond(['error' => 'ФИО: не более 191 символа, без управляющих символов.'], 400);
     }
     return trim(preg_replace('/\s+/u', ' ', $value));
+}
+
+function validate_user_contact($value, $field)
+{
+    $message = $field === 'email' ? 'Укажите корректную почту.' : 'Укажите корректный телефон: от 7 до 20 цифр, можно использовать +, пробелы, скобки и дефисы.';
+    if (!is_string($value) || preg_match('/[\x00-\x1f\x7f]/', $value)) respond(['error' => $message], 400);
+    $value = trim($value);
+    if ($value === '') return '';
+    if ($field === 'email') {
+        if (strlen($value) > 254 || !filter_var($value, FILTER_VALIDATE_EMAIL)) respond(['error' => $message], 400);
+    } else {
+        $digits = strlen(preg_replace('/[^0-9]/', '', $value));
+        if (strlen($value) > 64 || !preg_match('/^[+0-9(). -]+$/D', $value) || $digits < 7 || $digits > 20) respond(['error' => $message], 400);
+    }
+    return $value;
 }
 
 function registry_apply_fields(array $record, array $fields, array $user, array $users)
@@ -662,6 +690,8 @@ try {
         $password = isset($body['password']) ? (string) $body['password'] : '';
         $role = (isset($body['role']) ? $body['role'] : '') === 'admin' ? 'admin' : 'user';
         $fullName = validate_full_name(bitrix_value($body, 'fullName'));
+        $phone = validate_user_contact(bitrix_value($body, 'phone'), 'phone');
+        $email = validate_user_contact(bitrix_value($body, 'email'), 'email');
         if (!validate_login($login)) {
             respond(['error' => 'Логин: 3–64 символа, латинские буквы, цифры, точка, дефис или подчёркивание.'], 400);
         }
@@ -669,11 +699,13 @@ try {
             respond(['error' => 'Пароль должен содержать не менее 8 символов.'], 400);
         }
         try {
-            $statement = $pdo->prepare('INSERT INTO manager_users (login, full_name, password_hash, role, created_at)
-                VALUES (:login, :full_name, :password_hash, :role, :created_at)');
+            $statement = $pdo->prepare('INSERT INTO manager_users (login, full_name, phone, email, password_hash, role, created_at)
+                VALUES (:login, :full_name, :phone, :email, :password_hash, :role, :created_at)');
             $statement->execute([
                 ':login' => $login,
                 ':full_name' => $fullName,
+                ':phone' => $phone,
+                ':email' => $email,
                 ':password_hash' => password_hash($password, PASSWORD_DEFAULT),
                 ':role' => $role,
                 ':created_at' => gmdate('c'),
@@ -695,12 +727,15 @@ try {
             respond(['error' => 'Пользователь не найден.'], 404);
         }
         if (bitrix_value($body, 'action') === 'profile') {
-            $fullName = validate_full_name(bitrix_value($body, 'fullName'));
-            $statement = $pdo->prepare('SELECT id FROM manager_users WHERE id = ?');
+            $statement = $pdo->prepare('SELECT full_name, phone, email FROM manager_users WHERE id = ?');
             $statement->execute([$userId]);
-            if (!$statement->fetch()) respond(['error' => 'Пользователь не найден.'], 404);
-            $statement = $pdo->prepare('UPDATE manager_users SET full_name = ? WHERE id = ?');
-            $statement->execute([$fullName, $userId]);
+            $profile = $statement->fetch();
+            if (!$profile) respond(['error' => 'Пользователь не найден.'], 404);
+            $fullName = array_key_exists('fullName', $body) ? validate_full_name($body['fullName']) : $profile['full_name'];
+            $phone = array_key_exists('phone', $body) ? validate_user_contact($body['phone'], 'phone') : $profile['phone'];
+            $email = array_key_exists('email', $body) ? validate_user_contact($body['email'], 'email') : $profile['email'];
+            $statement = $pdo->prepare('UPDATE manager_users SET full_name = ?, phone = ?, email = ? WHERE id = ?');
+            $statement->execute([$fullName, $phone, $email, $userId]);
             respond(fetch_users($pdo));
         }
         if ((isset($body['action']) ? $body['action'] : '') === 'password') {
