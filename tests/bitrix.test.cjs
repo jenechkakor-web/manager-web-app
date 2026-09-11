@@ -11,36 +11,38 @@ const {config,users,snapshot} = fixture;
 const event = (dealId='17000') => ({event:'ONCRMDEALADD',auth:{domain:'portal.example',application_token:config.eventToken},data:{FIELDS:{ID:dealId}}});
 const mapped = (patch={}, previous) => bitrix.mapSnapshot({...structuredClone(snapshot),...patch},config,users,previous).record;
 
-test('Б24: все стадии, создатель, фактическая оплата и один бонус', () => {
-  for(const [status,names] of Object.entries(bitrix.rules.stages)) for(const stageName of names) {
-    const record=mapped({stageName});
-    record.registryMeta.bonusType='12%';
-    assert.equal(record.registryMeta.bitrix.dealStatus,status);
-    assert.equal(record.registryMeta.paymentStatus,status==='Планируется'?'Планируется':'Предоплата');
-    assert.equal(record.amount,100000);assert.equal(record.registryMeta.prepayment,50000);
-    assert.equal(record.ownerId,2);assert.equal(record.number,'17000');assert.equal(record.date,'2026-09-10');
-    assert.equal(record.registryMeta.source,'SEO (verkup.ru)');
-    assert.equal(bonusCents(record),status==='Завершена'?1200000:0);
+test('Б24: только четыре поля, внутренняя оплата и бонусы', () => {
+  for(const names of Object.values(bitrix.rules.stages)) for(const stageName of [...names,'Неизвестная стадия']) {
+    const record=mapped({stageName,deal:{...snapshot.deal,UF_PAID:'bad',DATE_CREATE:'bad'}});
+    assert.equal(record.registryMeta.paymentStatus,'Планируется');
+    assert.equal(record.registryMeta.prepayment,0);
+    assert.equal(record.registryMeta.bitrix.dealStatus,undefined);
+    assert.equal(record.amount,100000); assert.equal(record.ownerId,2); assert.equal(record.number,'17000');
+    assert.equal(record.registryMeta.source,snapshot.source); assert.equal(bonusCents(record),0);
   }
-  assert.equal(bitrix.stageStatus('  создать Счёт и Договор (М) '),'Планируется');
-  for (const value of ['',null,false,'100000.00|RUB']) {
-    const paid = mapped({stageName:'ЗАМЕР (пр)',deal:{...snapshot.deal,UF_PAID:value}});
-    assert.equal(paid.registryMeta.paymentStatus,'Да');assert.equal(paid.registryMeta.prepayment,100000);
-    assert.equal(bonusCents(paid),0);
-    const planned = mapped({deal:{...snapshot.deal,UF_PAID:value}});
-    assert.equal(planned.registryMeta.paymentStatus,'Планируется');
-  }
-  const full=mapped({stageName:'В ПРОИЗВОДСТВЕ (пр)',deal:{...snapshot.deal,UF_PAID:'100 000,00|RUB'}});
-  full.registryMeta.bonusType='12%'; full.registryMeta.closingDocs='Отправлены';
-  assert.equal(full.registryMeta.paymentStatus,'Да');assert.equal(bonusCents(full),0);
-  const complete=stampQualification(mapped({stageName:bitrix.rules.stages['Завершена'][0]},full),full);
-  const again=stampQualification(mapped({stageName:bitrix.rules.stages['Завершена'][0]},complete),complete);
-  assert.equal(again.bonusQualifiedAt,complete.bonusQualifiedAt);
+  const previous=mapped(); previous.date='2025-02-03'; previous.counterparty='Ручной клиент';
+  Object.assign(previous.registryMeta,{paymentStatus:'Да',prepayment:100000,closingDocs:'Отправлены',bonusType:'12%',paymentType:'Наличка'});
+  const complete=stampQualification(previous,null);
+  const again=stampQualification(mapped({stageName:'ЗАМЕР (пр)'},complete),complete);
+  assert.equal(again.date,'2025-02-03');assert.equal(again.counterparty,'Ручной клиент');
+  assert.equal(again.registryMeta.paymentType,'Наличка');assert.equal(again.bonusQualifiedAt,complete.bonusQualifiedAt);
   assert.equal(buildReport([again],users,[],users[1],new URLSearchParams()).allTime.accrued,12000);
-  const reopened=stampQualification(mapped({stageName:'ЗАМЕР (пр)'},again),again);
-  assert.equal(reopened.bonusQualifiedAt,'');assert.equal(bonusCents(reopened),0);
-  const unknown=mapped({stageName:'Неподдерживаемая стадия'},again);
-  assert.equal(unknown.registryMeta.bitrix.unmappedStage,true);assert.equal(bonusCents(unknown),0);
+  assert.throws(()=>mapped({deal:{...snapshot.deal,OPPORTUNITY:'90000'}},again));
+  assert.throws(()=>mapped({deal:{...snapshot.deal,OPPORTUNITY:'110000'}},again));
+  again.registryMeta.paymentStatus='Предоплата';again.registryMeta.prepayment=50000;
+  assert.equal(bonusCents(mapped({stageName:'Сделка завершена. Документы подписаны.'},again)),0);
+  const legacy={...again,registryMeta:{...again.registryMeta,bitrix:{dealStatus:'Завершена'}}};
+  assert.equal(bonusCents(legacy),0,'Legacy CRM state cannot award a bonus');
+});
+
+test('Б24: последние пять по создателю, а не ответственному', async()=>{
+  const calls=[];
+  const call=async(method,params)=>{calls.push({method,params});return method==='user.get'?[snapshot.creator]:Array.from({length:8},(_,i)=>({ID:String(18020-i),CREATED_BY_ID:snapshot.creator.ID}));};
+  assert.deepEqual(await bitrix.recentIds(config,users,users[1],call),['18020','18019','18018','18017','18016']);
+  assert.deepEqual(calls[1].params.filter,{CREATED_BY_ID:snapshot.creator.ID});
+  assert.deepEqual(calls[1].params.order,{DATE_CREATE:'DESC',ID:'DESC'});
+  await assert.rejects(()=>bitrix.recentIds(config,users,users[0],call));
+  await assert.rejects(()=>bitrix.recentIds(config,users,users[1],async method=>method==='user.get'?[snapshot.creator]:[{ID:'1',CREATED_BY_ID:'99'}]));
 });
 
 test('Б24: только разрешённые имена и единственное существующее ФИО', () => {
@@ -65,12 +67,12 @@ test('Б24: подпись, домен, ошибки данных и защит�
   assert.throws(()=>bitrix.authenticate(event(),{...config,eventToken:''}));
   assert.throws(()=>bitrix.endpoint({...config,webhookUrl:'http://portal.example/rest/1/token/'}));
   assert.equal(bitrix.authenticate({...event(),event:'ONCRMDEALDELETE'},config),null);
-  for(const patch of [{OPPORTUNITY:'invalid'},{OPPORTUNITY:'-1'},{UF_PAID:'-10'},{CURRENCY_ID:'USD'}]) assert.throws(()=>mapped({deal:{...snapshot.deal,...patch}}));
-  assert.throws(()=>bitrix.mapSnapshot(snapshot,{...config,paidAmountField:'MISSING'},users));
+  for(const patch of [{OPPORTUNITY:'invalid'},{OPPORTUNITY:'-1'},{CURRENCY_ID:'USD'}]) assert.throws(()=>mapped({deal:{...snapshot.deal,...patch}}));
+  assert.doesNotThrow(()=>bitrix.mapSnapshot(snapshot,{...config,paidAmountField:'MISSING'},users));
   const plain={registryMeta:{bitrix:{dealStatus:'Завершена'}}};
   bitrix.preserveCrmFields(plain,null);assert.equal(plain.registryMeta.bitrix,undefined);
   const original=mapped();const changed=structuredClone(original);changed.amount=999;changed.registryMeta.bitrix.dealStatus='Завершена';
-  bitrix.preserveCrmFields(changed,original);assert.equal(changed.amount,100000);assert.equal(changed.registryMeta.bitrix.dealStatus,'Планируется');
+  bitrix.preserveCrmFields(changed,original);assert.equal(changed.amount,999);assert.equal(changed.registryMeta.bitrix.dealStatus,undefined);
   const calls=[];
   const response=await bitrix.fetchSnapshot('17000',config,async (method,params)=>{
     calls.push({method,params});
@@ -78,8 +80,8 @@ test('Б24: подпись, домен, ошибки данных и защит�
     if(method==='user.get')return [snapshot.creator];
     return [{STATUS_ID:params.filter.STATUS_ID,NAME:params.filter.ENTITY_ID==='SOURCE'?snapshot.source:snapshot.stageName}];
   });
-  assert.equal(response.stageName,snapshot.stageName);
-  assert(calls.some(call=>call.params.filter?.ENTITY_ID==='DEAL_STAGE_7'));
+  assert.equal(response.source,snapshot.source);
+  assert(!calls.some(call=>call.params.filter?.ENTITY_ID==='DEAL_STAGE_7'));
   assert.deepEqual(calls.find(call=>call.method==='user.get').params,{ID:'138'});
 });
 
@@ -120,17 +122,20 @@ test('Б24 HTTP: ФИО, создание/изменение, повторные
     assert.equal((await get(anton)).length,1);assert.equal((await get(other)).length,0);
     const update=async patch=>{await fs.writeFile(mock,JSON.stringify({...snapshot,...patch}));const r=await request('bitrix/events',{...event(),event:'ONCRMDEALUPDATE'});assert.equal(r.status,200,await r.text());};
     await update({stageName:'В ПРОИЗВОДСТВЕ (пр)'});
-    let own=(await get(anton))[0];assert.equal(own.registryMeta.bitrix.dealStatus,'В работе');assert.equal(own.registryMeta.paymentStatus,'Предоплата');
+    let own=(await get(anton))[0];assert.equal(own.registryMeta.bitrix.dealStatus,undefined);assert.equal(own.registryMeta.paymentStatus,'Планируется');
     await update({stageName:bitrix.rules.stages['Завершена'][0]});
     const payout=async()=> (await request('payouts',undefined,anton,'GET')).json();
-    const first=await payout();assert.equal(first.allTime.accrued,12000);
+    const first=await payout();assert.equal(first.allTime.accrued,0);
+    assert.equal((await request('contracts-registry',{action:'update-meta',number:'17000',fields:{paymentStatus:'Предоплата',prepayment:50000}},anton)).status,200);
+    assert.equal((await request('contracts-registry',{action:'update-meta',number:'17000',fields:{paymentStatus:'Да',closingDocs:'Отправлены'}},anton)).status,200);
+    assert.equal((await payout()).allTime.accrued,12000);
     const before=JSON.parse(await fs.readFile(path.join(dir,'contracts-registry.json'),'utf8'))[0].bonusQualifiedAt;
     const form=new URLSearchParams({'event':'ONCRMDEALUPDATE','auth[domain]':'portal.example','auth[application_token]':config.eventToken,'data[FIELDS][ID]':'17000'});
     assert.equal((await fetch(`${base}/api/bitrix/events`,{method:'POST',body:form})).status,200);
     assert.equal((await payout()).allTime.accrued,12000);
     assert.equal(JSON.parse(await fs.readFile(path.join(dir,'contracts-registry.json'),'utf8'))[0].bonusQualifiedAt,before);
-    await request('contracts-registry',{action:'update-meta',number:'17000',fields:{bitrix:{dealStatus:'Планируется'},source:'hacked',prepayment:1}},anton);
-    own=(await get(anton))[0];assert.equal(own.registryMeta.source,snapshot.source);assert.equal(own.registryMeta.bitrix.dealStatus,'Завершена');
+    await request('contracts-registry',{action:'update-meta',number:'17000',fields:{bitrix:{dealStatus:'Планируется'},source:'Ручной источник',paymentStatus:'Предоплата',prepayment:1}},anton);
+    own=(await get(anton))[0];assert.equal(own.registryMeta.source,'Ручной источник');assert.equal(own.registryMeta.bitrix.dealStatus,undefined);
     const failedBefore=await get();await fs.writeFile(mock,JSON.stringify({error:true}));
     const failed=await request('bitrix/events',event());assert.equal(failed.status,502);assert(!(await failed.text()).includes('private-token'));assert.deepEqual(await get(),failedBefore);
     await update({stageName:'ЗАМЕР (пр)'});assert.equal((await payout()).allTime.accrued,0);
@@ -164,6 +169,36 @@ test('Б24 HTTP: ФИО, создание/изменение, повторные
     assert.equal((await get()).find(r=>r.number==='17002').amount,100000);
     assert.equal((await request('bitrix/events',event('17002'))).status,200);
     assert.equal((await get()).find(r=>r.number==='17002').amount,200000);
+    // Five IDs are selected on the server and bound to the initiating session.
+    await fs.writeFile(mock,JSON.stringify(snapshot));
+    const planResponse=await request('bitrix/recent',{action:'prepare'},anton);assert.equal(planResponse.status,200);
+    const plan=await planResponse.json();assert.equal(plan.dealIds.length,5);
+    assert.equal((await request('bitrix/recent',{runId:plan.runId,dealId:'18015'},anton)).status,403);
+    assert.equal((await request('bitrix/recent',{runId:plan.runId,dealId:plan.dealIds[0]},other)).status,403);
+    for(const dealId of plan.dealIds) assert.equal((await request('bitrix/recent',{runId:plan.runId,dealId},anton)).status,200);
+    assert.equal((await get(anton)).filter(r=>plan.dealIds.includes(r.number)).length,5);
+    assert.equal((await get(anton)).filter(r=>r.number==='18015').length,0);
+    const editOwn=fields=>request('contracts-registry',{action:'update-meta',number:'18020',fields},anton);
+    assert.equal((await editOwn({title:'Своё название',source:'Сарафан',date:'2026-01-02',counterparty:'Клиент',amount:123456})).status,200);
+    assert.equal((await editOwn({number:'another'})).status,400);
+    assert.equal((await editOwn({manager:'other'})).status,403);
+    assert.equal((await editOwn({recordStatus:'exported'})).status,403);
+    assert.equal((await editOwn({paymentStatus:'Да'})).status,409);
+    assert.equal((await editOwn({bonusAmount:123})).status,409);
+    assert.equal((await editOwn({paymentStatus:'Предоплата',prepayment:5000})).status,200);
+    assert.equal((await editOwn({amount:4999})).status,409);
+    const manualOwn=(await get(anton)).find(r=>r.number==='18020');assert.equal(manualOwn.date,'2026-01-02');assert.equal(manualOwn.amount,123456);
+    await fs.writeFile(mock,JSON.stringify({...snapshot,deal:{...snapshot.deal,CREATED_BY_ID:'1'},creator:{ID:'1',NAME:'Алексей',LAST_NAME:'Купоров'}}));
+    assert.equal((await request('bitrix/recent',{runId:plan.runId,dealId:'18020'},anton)).status,403);
+    await fs.writeFile(mock,JSON.stringify(snapshot));
+    for(const sellerKey of ['ip','ooo']) {
+      const invoice={number:'INVOICE-'+sellerKey,amount:100,status:'exported',data:{sellerKey}};
+      assert.equal((await request('contracts-registry',{record:invoice},anton)).status,200);
+      assert.equal((await get(anton)).find(r=>r.number===invoice.number).registryMeta.paymentType,sellerKey==='ip'?'ИП':'ООО');
+      await request('contracts-registry',{action:'update-meta',number:invoice.number,fields:{paymentType:'Наличка'}},anton);
+      await request('contracts-registry',{record:invoice},anton);
+      assert.equal((await get(anton)).find(r=>r.number===invoice.number).registryMeta.paymentType,'Наличка');
+    }
     const newest=await fs.readFile(path.join(dir,'contracts-registry.json'),'utf8');
     await fs.writeFile(mock,JSON.stringify({...snapshot,deal:{...snapshot.deal,DATE_MODIFY:'2026-09-09T00:00:00Z'}}));
     assert.equal((await (await request('bitrix/events',event())).json()).skipped,'stale_snapshot');

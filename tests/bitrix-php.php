@@ -4,20 +4,12 @@ require dirname(__DIR__) . '/api/index.php';
 function check_bitrix($condition, $message) { if (!$condition) throw new RuntimeException($message); }
 $fixture = json_decode(file_get_contents(__DIR__ . '/bitrix-fixture.json'), true);
 $config = $fixture['config']; $users = $fixture['users']; $snapshot = $fixture['snapshot'];
-foreach (bitrix_rules()['stages'] as $status => $names) foreach ($names as $name) {
-    $input = $snapshot; $input['stageName'] = $name;
-    $record = normalize_record(bitrix_map_snapshot($input, $config, $users)['record']);
-    check_bitrix($record['registryMeta']['bitrix']['dealStatus'] === $status, 'Stage: ' . $name);
-    check_bitrix($record['registryMeta']['paymentStatus'] === ($status === 'Планируется' ? 'Планируется' : 'Предоплата'), 'Payment stage');
-    check_bitrix($record['amount'] == 100000 && $record['registryMeta']['prepayment'] == 50000, 'Money');
-    check_bitrix(payout_bonus_cents($record) === ($status === 'Завершена' ? 1200000 : 0), 'Bonus');
-}
-check_bitrix(bitrix_stage_status('  создать Счёт и Договор (М) ') === 'Планируется', 'Case and spaces');
-foreach (['', null, false, '100000.00|RUB'] as $value) {
-    $input = $snapshot; $input['stageName'] = 'ЗАМЕР (пр)'; $input['deal']['UF_PAID'] = $value;
-    $paid = normalize_record(bitrix_map_snapshot($input, $config, $users)['record']);
-    check_bitrix($paid['registryMeta']['paymentStatus'] === 'Да' && $paid['registryMeta']['prepayment'] == 100000, 'Empty or equal advance means full payment');
-    check_bitrix(payout_bonus_cents($paid) === 0, 'Full payment in production does not accrue');
+foreach (bitrix_rules()['stages'] as $names) foreach ($names as $name) {
+    $input=$snapshot; $input['stageName']=$name; $input['deal']['UF_PAID']='invalid'; $input['deal']['DATE_CREATE']='invalid';
+    $record=normalize_record(bitrix_map_snapshot($input,$config,$users)['record']);
+    check_bitrix($record['registryMeta']['paymentStatus']==='Планируется' && $record['registryMeta']['prepayment']==0,'CRM cannot set payment');
+    check_bitrix(!isset($record['registryMeta']['bitrix']['dealStatus']) && payout_bonus_cents($record)===0,'No CRM status or bonus');
+    check_bitrix($record['date']===payout_today() && $record['amount']==100000,'Registry date and CRM amount');
 }
 foreach (bitrix_rules()['managers'] as $name) {
     $parts = explode(' ', $name);
@@ -43,18 +35,35 @@ $bad = $event; $bad['auth']['domain'] = 'evil.example';
 try { bitrix_authenticate($bad, $config); throw new RuntimeException('Accepted untrusted domain'); } catch (BitrixException $expected) { check_bitrix($expected->getCode() === 403, 'Forbidden'); }
 $bad = $event; $bad['auth']['application_token'] = 'bad';
 try { bitrix_authenticate($bad, $config); throw new RuntimeException('Accepted bad token'); } catch (BitrixException $expected) {}
-$bad = $snapshot; $bad['deal']['UF_PAID'] = 'broken';
+$bad = $snapshot; $bad['deal']['OPPORTUNITY'] = 'broken';
 try { bitrix_map_snapshot($bad, $config, $users); throw new RuntimeException('Accepted invalid money'); } catch (BitrixException $expected) {}
-$input = $snapshot; $input['stageName'] = 'В ПРОИЗВОДСТВЕ (пр)'; $input['deal']['UF_PAID'] = '100 000,00|RUB';
-$active = normalize_record(bitrix_map_snapshot($input, $config, $users)['record']);
-$active['registryMeta']['closingDocs'] = 'Отправлены';
-check_bitrix($active['registryMeta']['paymentStatus'] === 'Да' && payout_bonus_cents($active) === 0, 'Full payment never closes a CRM deal');
-$input['stageName'] = bitrix_rules()['stages']['Завершена'][0];
-$complete = normalize_record(bitrix_map_snapshot($input, $config, $users, $active)['record']);
-check_bitrix(payout_qualification_date($complete, $complete, '2026-09-10T10:00:00Z') === '2026-09-10T10:00:00Z', 'Stable bonus date');
-check_bitrix(payout_qualification_date($active, $complete, '2026-09-10T10:00:00Z') === '', 'Reopening revokes bonus');
-$complete['ownerId'] = 2; $complete['bonusQualifiedAt'] = '2026-09-10T10:00:00Z';
-check_bitrix(payout_build_report([$complete], $users, [], $users[1], [])['allTime']['accrued'] == 12000, 'Report accrual');
+$active=normalize_record(bitrix_map_snapshot($snapshot,$config,$users)['record']);
+$active['date']='2025-02-03'; $active['registryMeta']['paymentStatus']='Да'; $active['registryMeta']['prepayment']=100000;
+$active['registryMeta']['closingDocs']='Отправлены'; $active['registryMeta']['paymentType']='Наличка';
+$complete=normalize_record(bitrix_map_snapshot($snapshot,$config,$users,$active)['record']);
+check_bitrix($complete['date']==='2025-02-03' && $complete['registryMeta']['paymentType']==='Наличка','Local fields preserved');
+check_bitrix(payout_bonus_cents($complete)===1200000,'Internal completion earns bonus');
+check_bitrix(payout_qualification_date($complete,$complete,'2026-09-10T10:00:00Z')==='2026-09-10T10:00:00Z','Stable bonus date');
+$active['registryMeta']['paymentStatus']='Предоплата'; $active['registryMeta']['bitrix']['dealStatus']='Завершена';
+check_bitrix(payout_bonus_cents($active)===0,'Legacy CRM status ignored');
+check_bitrix(payout_qualification_date($active,$complete,'2026-09-10T10:00:00Z')==='','Internal reopening revokes bonus');
+$lastCall=[];
+$recentCall=static function($method,$params) use($snapshot,&$lastCall) {
+    if($method==='user.get') return [$snapshot['creator']];
+    $lastCall=$params; $rows=[]; for($i=0;$i<8;$i++) $rows[]=['ID'=>(string)(18020-$i),'CREATED_BY_ID'=>$snapshot['creator']['ID']]; return $rows;
+};
+check_bitrix(bitrix_recent_ids($config,$users,$users[1],$recentCall)===['18020','18019','18018','18017','18016'],'Five recent deals');
+check_bitrix($lastCall['filter']===['CREATED_BY_ID'=>$snapshot['creator']['ID']],'Only creator filter');
+try { bitrix_recent_ids($config,$users,$users[0],$recentCall); throw new RuntimeException('Unmapped admin accepted'); } catch(BitrixException $expected) {}
+$edited=registry_apply_fields($active,['title'=>'Вручную','source'=>'Сарафан','date'=>'2026-01-02','amount'=>123456],$users[1],$users);
+check_bitrix($edited['date']==='2026-01-02' && $edited['amount']==123456 && $edited['registryMeta']['source']==='Сарафан','CRM rows editable');
+foreach ([['number'=>'other'],['manager'=>'admin'],['recordStatus'=>'exported'],['amount'=>1],['bonusAmount'=>123]] as $fields) {
+    try { registry_apply_fields($active,$fields,$users[1],$users); throw new RuntimeException('Invalid edit accepted'); } catch(BitrixException $expected) {}
+}
+foreach (['ip'=>'ИП','ooo'=>'ООО'] as $key=>$type) {
+    $invoice=normalize_record(['number'=>'INV','status'=>'exported','data'=>['sellerKey'=>$key]]);
+    check_bitrix($invoice['registryMeta']['paymentType']===$type,'Invoice issuer auto payment type');
+}
 $forged = bitrix_preserve_fields(['registryMeta'=>['bitrix'=>['dealStatus'=>'Завершена']]], null);
 check_bitrix(!isset($forged['registryMeta']['bitrix']), 'Client cannot forge CRM metadata');
 echo "PHP Bitrix rules and bonuses passed\n";
@@ -80,19 +89,26 @@ check_bitrix($before === $after, 'Existing records unchanged');
 $remote['stageName'] = 'Сделка завершена. Документы подписаны.';
 bitrix_sync($pdo, $config, '17000', $call);
 $date = $pdo->query("SELECT qualified_at FROM manager_bonus_qualification WHERE record_number = '17000'")->fetchColumn();
-check_bitrix(strlen($date) > 10, 'Completion stamps qualification');
+check_bitrix($date === '', 'CRM completion never stamps qualification');
+$internal=fetch_record($pdo,['id'=>2,'role'=>'user'],'17000');
+$internal['registryMeta']['paymentStatus']='Да';$internal['registryMeta']['prepayment']=100000;$internal['registryMeta']['closingDocs']='Отправлены';
+save_record($pdo,$internal,['id'=>2,'role'=>'user']);
+$date=$pdo->query("SELECT qualified_at FROM manager_bonus_qualification WHERE record_number = '17000'")->fetchColumn();
+check_bitrix(strlen($date)>10,'Internal completion stamps qualification');
 bitrix_sync($pdo, $config, '17000', $call);
 check_bitrix($pdo->query("SELECT qualified_at FROM manager_bonus_qualification WHERE record_number = '17000'")->fetchColumn() === $date, 'Repeated completion preserves timestamp');
 $stored = $pdo->query("SELECT * FROM manager_contracts WHERE record_number = '17000'")->fetch();
-$remote['deal']['UF_PAID'] = 'bad';
+$remote['deal']['OPPORTUNITY'] = 'bad';
 try { bitrix_sync($pdo, $config, '17000', $call); throw new RuntimeException('Accepted bad remote data'); } catch (BitrixException $expected) {}
 check_bitrix($stored === $pdo->query("SELECT * FROM manager_contracts WHERE record_number = '17000'")->fetch(), 'Failure rolled back');
 $remote = $snapshot; $remote['stageName'] = 'ЗАМЕР (пр)';
 bitrix_sync($pdo, $config, '17000', $call);
-check_bitrix($pdo->query("SELECT qualified_at FROM manager_bonus_qualification WHERE record_number = '17000'")->fetchColumn() === '', 'Reopening revokes qualification');
+check_bitrix($pdo->query("SELECT qualified_at FROM manager_bonus_qualification WHERE record_number = '17000'")->fetchColumn() === $date, 'CRM reopening preserves internal qualification');
 $remote['deal']['ID'] = '17001'; $config['numberField'] = 'TEST_NUMBER'; $remote['deal']['TEST_NUMBER'] = '17000';
 try { bitrix_sync($pdo, $config, '17001', $call); throw new RuntimeException('Accepted number collision'); } catch (BitrixException $expected) { check_bitrix($expected->getCode() === 409, 'Number collision'); }
 check_bitrix((int) $pdo->query("SELECT COUNT(*) FROM manager_bitrix_deals WHERE deal_id = '17001'")->fetchColumn() === 0, 'Conflict does not leave an orphan link');
+$remote=$snapshot; unset($config['numberField']);
+try { bitrix_sync($pdo,$config,'17000',$call,null,1); throw new RuntimeException('Foreign recent sync accepted'); } catch(BitrixException $expected) { check_bitrix($expected->getCode()===403,'Creator scope enforced'); }
 echo "PHP Bitrix MySQL transaction checks passed\n";
 
 unset($config['numberField']);

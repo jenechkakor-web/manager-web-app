@@ -212,9 +212,9 @@ async function bitrixRequest(route, body) {
 async function loadBitrixStatus() {
   try {
     const status = await bitrixRequest("status");
-    bitrixStatus.textContent = status.configured ? `Подключение настроено: ${status.domain}.${status.paymentConfigured ? "" : " Укажите поле предоплаты."}` : "Подключение ещё не настроено.";
+    bitrixStatus.textContent = status.configured ? `Подключение настроено: ${status.domain}.` : "Подключение ещё не настроено.";
     bitrixManagers.innerHTML = `<ul>${status.managers.map(manager => `<li>${escapeHtml(manager.name)} — ${manager.linked ? escapeHtml(manager.login) : "заполните ФИО в единственной учётной записи"}</li>`).join("")}</ul>`;
-    for (const key of ["paidAmountField", "fullPaymentField", "numberField"]) {
+    for (const key of ["numberField"]) {
       if (document.activeElement !== bitrixConfigForm.elements[key]) bitrixConfigForm.elements[key].value = status[key] || "";
     }
   } catch (error) { bitrixStatus.textContent = error.message; }
@@ -241,7 +241,7 @@ bitrixSyncForm.addEventListener("submit", async event => {
   try {
     const result = await bitrixRequest("sync", { dealId: bitrixSyncForm.elements.dealId.value.trim() });
     const skipped = { manager_not_allowed_or_unmapped: "Создатель сделки не связан с разрешённым пользователем приложения.", record_deleted: "Запись ранее удалена из реестра.", stale_snapshot: "В реестре уже сохранены более свежие данные." };
-    bitrixStatus.textContent = result.synced ? `Сделка ${result.number}: ${result.dealStatus}.${result.unmappedStage ? " Стадия Б24 не сопоставлена." : ""}` : skipped[result.skipped] || "Сделка пропущена.";
+    bitrixStatus.textContent = result.synced ? `Данные сделки ${result.number} обновлены.` : skipped[result.skipped] || "Сделка пропущена.";
   } catch (error) { bitrixStatus.textContent = error.message; }
   finally { button.disabled = false; }
 });
@@ -290,7 +290,7 @@ refreshButton.addEventListener('click', async () => {
         row.dataset.result = result.synced ? 'updated' : 'skipped';
         if (result.synced) {
           updated++;
-          row.textContent = `${number}: ${result.title} — ${result.dealStatus}, ${new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB'}).format(result.amount)}, оплата: ${result.paymentStatus}${result.unmappedStage ? `; стадия Б24: ${result.stageName} — требуется сопоставление` : ''}`;
+          row.textContent = `${number}: ${result.title} — ${new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB'}).format(result.amount)}`;
         } else { skipped++; row.textContent = `${number}: ${reasons[result.skipped] || 'Пропущена'}`; }
       } catch(error) { failed++; row.dataset.result='error'; row.textContent=`${number}: ${error.message}`; }
       completed++; refreshProgress.value = completed;

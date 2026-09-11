@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Пользователи</title>
-    <link rel="stylesheet" href="styles.css?v=20260702-deals-prod-1" />
+    <link rel="stylesheet" href="styles.css?v=20260911-bitrix-local-rules-1" />
   </head>
   <body>
     <main class="app-shell">
@@ -75,13 +75,11 @@
                 <form id="bitrixConfigForm" class="bitrix-config-grid" autocomplete="off">
                   <label><span>Входящий вебхук</span><input name="webhookUrl" type="password" autocomplete="new-password" placeholder="https://verkup.bitrix24.ru/rest/…/" maxlength="2048" /></label>
                   <label><span>Токен исходящего вебхука</span><input name="eventToken" type="password" autocomplete="new-password" maxlength="2048" /></label>
-                  <label><span>Поле предоплаты</span><input name="paidAmountField" placeholder="UF_CRM_1547663414463" maxlength="101" /></label>
-                  <label><span>Поле полной оплаты (если есть)</span><input name="fullPaymentField" placeholder="UF_CRM_…" maxlength="101" /></label>
                   <label><span>Поле номера (пусто — ID сделки)</span><input name="numberField" placeholder="ID сделки" maxlength="101" /></label>
                   <button class="button primary" type="submit">Сохранить подключение</button>
                 </form>
                 <p class="field-hint">Секретные поля остаются пустыми после сохранения. Заполните их только при первом подключении или замене ключей.</p>
-                <p class="field-hint">Сумма — из «Сумма и валюта». Пустая предоплата или предоплата на полную сумму означает полную оплату; меньшая сумма — частичную.</p>
+                <p class="field-hint">Из Б24 загружаются номер, название, источник и сумма. Оплата, дата и закрывающие документы ведутся в реестре. Статус и бонус рассчитываются по внутренним правилам.</p>
                 <p class="field-hint">Исходящий вебхук: <code>https://manager.verkup.ru/api/bitrix/events</code>. События: создание и обновление сделки.</p>
               </details>
               <form id="bitrixSyncForm" class="user-profile-action">
@@ -90,7 +88,7 @@
               </form>
               <div class="bitrix-refresh-section">
                 <h3>Обновление существующего реестра</h3>
-                <p class="field-hint">Сверяем номер сделки и её создателя. Обновляем название, дату, сумму, источник, оплату и стадию. Предыдущие данные сохраняются на сервере. Записи без однозначного номера Б24 пропускаются.</p>
+                <p class="field-hint">Сверяем номер сделки и её создателя. Обновляем название, сумму и источник. Предыдущие данные сохраняются на сервере. Записи без однозначного номера Б24 пропускаются.</p>
                 <button class="button primary" id="bitrixRefreshButton" type="button">Обновить все сделки из Б24</button>
                 <button class="button ghost" id="bitrixRefreshStop" type="button" disabled>Остановить</button>
                 <p id="bitrixRefreshStatus" role="status" aria-live="polite"></p>
@@ -103,6 +101,6 @@
       </section>
     </main>
     <script src="auth.js?v=20260702-deals-prod-1"></script>
-    <script src="users.js?v=20260911-bitrix-kuporov-1"></script>
+    <script src="users.js?v=20260911-bitrix-local-rules-1"></script>
   </body>
 </html>

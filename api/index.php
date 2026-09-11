@@ -221,6 +221,10 @@ function template_prepayment(array $data, $amount)
     return round_money(((float) $amount * $percent) / 100);
 }
 
+function invoice_payment_type(array $data)
+{
+    return bitrix_value($data, 'sellerKey') === 'ip' ? 'ИП' : (bitrix_value($data, 'sellerKey') === 'ooo' ? 'ООО' : '');
+}
 function normalize_registry_meta(array $record, array $data, $amount)
 {
     $source = isset($record['registryMeta']) && is_array($record['registryMeta']) ? $record['registryMeta'] : $record;
@@ -235,7 +239,7 @@ function normalize_registry_meta(array $record, array $data, $amount)
         'paymentStatus' => normalize_choice(isset($source['paymentStatus']) ? $source['paymentStatus'] : '', ['Да', 'Предоплата', 'Планируется'], 'Планируется'),
         'prepayment' => $prepayment,
         'prepaymentOverridden' => isset($source['prepaymentOverridden']) && $source['prepaymentOverridden'] === true,
-        'paymentType' => normalize_choice(isset($source['paymentType']) ? $source['paymentType'] : '', ['ИП', 'ООО', 'Наличка'], ''),
+        'paymentType' => normalize_choice(!empty($source['paymentType']) ? $source['paymentType'] : (bitrix_value($record, 'status') === 'exported' ? invoice_payment_type($data) : ''), ['ИП', 'ООО', 'Наличка'], ''),
         'closingDocs' => normalize_choice(isset($source['closingDocs']) ? $source['closingDocs'] : '', ['Отправлены', 'Не отправлены', 'Не нужно'], 'Не отправлены'),
         'bonusType' => normalize_choice(isset($source['bonusType']) ? $source['bonusType'] : '', ['12%', '10%', '7%', '5%', '4%', '3%', 'от прибыли', 'оклад'], '12%'),
         'bonusAmount' => round_money(max(0, isset($source['bonusAmount']) ? (float) $source['bonusAmount'] : 0)),
@@ -317,7 +321,8 @@ function record_from_database_row(array $row, $includeData)
     $needsDataForMeta = !is_array($registryMeta)
         || !array_key_exists('prepayment', $registryMeta)
         || $registryMeta['prepayment'] === null
-        || $registryMeta['prepayment'] === '';
+        || $registryMeta['prepayment'] === ''
+        || ($row['status'] === 'exported' && empty($registryMeta['paymentType']));
     $data = $includeData || $needsDataForMeta
         ? json_decode((string) $row['data_json'], true)
         : [];
@@ -330,7 +335,7 @@ function record_from_database_row(array $row, $includeData)
         'status' => $row['status'] === 'exported' ? 'exported' : 'draft',
         'updatedAt' => (string) $row['updated_at'],
         'ownerLogin' => isset($row['owner_login']) ? (string) $row['owner_login'] : 'Удалённый пользователь',
-        'registryMeta' => normalize_registry_meta(['registryMeta' => is_array($registryMeta) ? $registryMeta : []], is_array($data) ? $data : [], $amount),
+        'registryMeta' => normalize_registry_meta(['registryMeta' => is_array($registryMeta) ? $registryMeta : [], 'status' => $row['status']], is_array($data) ? $data : [], $amount),
         'data' => $includeData && is_array($data) ? $data : [],
     ];
 }
@@ -485,6 +490,45 @@ function validate_full_name($value)
     return trim(preg_replace('/\s+/u', ' ', $value));
 }
 
+function registry_apply_fields(array $record, array $fields, array $user, array $users)
+{
+    $allowed = ['date', 'counterparty', 'amount', 'recordStatus', 'manager', 'title', 'source', 'paymentStatus', 'prepayment', 'paymentType', 'closingDocs', 'bonusType', 'bonusAmount', 'bitrix'];
+    foreach ($fields as $key => $value) if (!in_array($key, $allowed, true)) throw new BitrixException('Это поле нельзя редактировать.', 400);
+    foreach (['date', 'counterparty', 'title', 'source', 'recordStatus', 'manager', 'paymentStatus', 'paymentType', 'closingDocs', 'bonusType'] as $key) {
+        if (array_key_exists($key, $fields) && (!is_string($fields[$key]) || strlen($fields[$key]) > 764 || preg_match('/[\x00-\x1f\x7f]/', $fields[$key]))) throw new BitrixException('Некорректное значение поля.', 400);
+    }
+    foreach (['amount', 'prepayment', 'bonusAmount'] as $key) if (array_key_exists($key, $fields)) {
+        if (!is_numeric($fields[$key]) || !is_finite((float) $fields[$key]) || $fields[$key] < 0 || $fields[$key] > 9999999999999.99) throw new BitrixException('Некорректная сумма.', 400);
+        $fields[$key] = round_money($fields[$key]);
+    }
+    if (isset($fields['date']) && !payout_valid_date($fields['date'])) throw new BitrixException('Некорректная дата.', 400);
+    if ((isset($fields['manager']) || isset($fields['recordStatus'])) && $user['role'] !== 'admin') throw new BitrixException('Недостаточно прав.', 403);
+    if (isset($fields['recordStatus'])) {
+        if (!in_array($fields['recordStatus'], ['draft', 'exported'], true)) throw new BitrixException('Некорректный статус записи.', 400);
+        $record['status'] = $fields['recordStatus'];
+    }
+    if (isset($fields['manager'])) {
+        $target = null;
+        foreach ($users as $candidate) if ($candidate['login'] === $fields['manager']) $target = $candidate;
+        if (!$target) throw new BitrixException('Менеджер не найден.', 400);
+        $record['ownerId'] = (int) $target['id'];
+    }
+    foreach (['date', 'counterparty', 'amount'] as $key) if (array_key_exists($key, $fields)) $record[$key] = $fields[$key];
+    $oldMeta = $record['registryMeta'];
+    if ($oldMeta['paymentStatus'] === 'Предоплата' && bitrix_value($fields, 'paymentStatus') === 'Да') $fields['prepayment'] = $record['amount'];
+    $meta = array_merge($oldMeta, array_intersect_key($fields, $oldMeta));
+    if (array_key_exists('prepayment', $fields)) {
+        if (!in_array($meta['paymentStatus'], ['Да', 'Предоплата'], true)) throw new BitrixException('Предоплата доступна для оплаченных сделок и сделок с предоплатой.', 409);
+        $meta['prepaymentOverridden'] = true;
+    }
+    if (array_key_exists('bonusAmount', $fields) && $meta['bonusType'] !== 'от прибыли') throw new BitrixException('Сумма бонуса редактируется только для типа «от прибыли».', 409);
+    if ($meta['prepayment'] > $record['amount']) throw new BitrixException('Предоплата не может превышать сумму сделки.', 409);
+    $record['registryMeta'] = normalize_registry_meta(['registryMeta' => $meta], $record['data'], $record['amount']);
+    if ($record['registryMeta']['paymentStatus'] === 'Да' && $record['registryMeta']['prepayment'] < $record['amount']) throw new BitrixException('Нельзя поставить «Оплачен — Да», пока есть остаток оплаты.', 409);
+    $record['updatedAt'] = gmdate('c');
+    return $record;
+}
+
 // CLI-only entry for isolated tests; never changes HTTP authentication.
 if (PHP_SAPI === 'cli' && defined('MANAGER_API_TEST_MODE')) return;
 
@@ -513,6 +557,25 @@ try {
 
     if ($route === 'health' && $method === 'GET') {
         respond(['ok' => true, 'database' => true, 'payouts' => true, 'bitrix' => true]);
+    }
+    if ($route === 'bitrix/recent' && $method === 'POST') {
+        require_same_origin();
+        $user = require_user($pdo);
+        $body = request_json();
+        $bitrixConfig = bitrix_value($config, 'bitrix', []);
+        if (bitrix_value($body, 'action') === 'prepare') {
+            $call = static function ($method, $params) use ($bitrixConfig) { return bitrix_call($bitrixConfig, $method, $params); };
+            $ids = bitrix_recent_ids($bitrixConfig, fetch_users($pdo), $user, $call);
+            $batch = ['runId' => bin2hex(openssl_random_pseudo_bytes(18)), 'dealIds' => $ids, 'expiresAt' => time() + 1800];
+            $_SESSION['bitrix_recent'] = $batch;
+            respond(['runId' => $batch['runId'], 'dealIds' => $ids]);
+        }
+        $batch = isset($_SESSION['bitrix_recent']) ? $_SESSION['bitrix_recent'] : [];
+        $id = bitrix_id(bitrix_value($body, 'dealId'));
+        if (!$id || bitrix_value($batch, 'expiresAt', 0) < time() || !hash_equals(bitrix_value($batch, 'runId'), bitrix_text(bitrix_value($body, 'runId')))
+            || !in_array($id, bitrix_value($batch, 'dealIds', []), true)) respond(['error' => 'Список обновления устарел. Нажмите «Обновить данные с Б24» ещё раз.'], 403);
+        session_write_close();
+        respond(bitrix_recent_sync($pdo, $bitrixConfig, $id, $batch['runId'], $user['id']));
     }
     if ($route === 'bitrix/status' && $method === 'GET') {
         require_admin($pdo);
@@ -748,34 +811,15 @@ try {
             if ($user['role'] !== 'admin' && (int) $row['owner_id'] !== $user['id']) {
                 respond(['error' => 'Нельзя изменить договор другого пользователя.'], 403);
             }
-            $data = json_decode((string) $row['data_json'], true);
-            $currentMeta = json_decode(isset($row['registry_meta_json']) ? (string) $row['registry_meta_json'] : '', true);
-            $previous = record_from_database_row($row, false);
+            $previous = record_from_database_row($row, true);
+            $previous['ownerId'] = (int) $row['owner_id'];
             $fields = isset($body['fields']) && is_array($body['fields']) ? $body['fields'] : [];
-            if ($previous['registryMeta']['paymentStatus'] === 'Предоплата' && payout_value($fields, 'paymentStatus') === 'Да') {
-                $fields['prepayment'] = (float) $row['amount'];
+            $record = registry_apply_fields($previous, $fields, $user, fetch_users($pdo));
+            save_record($pdo, $record, $user);
+            if ($record['ownerId'] !== $previous['ownerId']) {
+                $statement = $pdo->prepare('UPDATE manager_contracts SET owner_id = ? WHERE record_number = ?');
+                $statement->execute([$record['ownerId'], $number]);
             }
-            $mergedFields = array_merge(is_array($currentMeta) ? $currentMeta : [], $fields);
-            if (array_key_exists('prepayment', $fields)) {
-                $mergedFields['prepaymentOverridden'] = true;
-            }
-            $registryMeta = normalize_registry_meta(
-                ['registryMeta' => $mergedFields],
-                is_array($data) ? $data : [],
-                (float) $row['amount']
-            );
-            $protected = bitrix_preserve_fields(['registryMeta' => $registryMeta], $previous);
-            $registryMeta = $protected['registryMeta'];
-            assert_paid_status_has_no_remainder($registryMeta, (float) $row['amount']);
-            $updatedAt = gmdate('c');
-            $statement = $pdo->prepare('UPDATE manager_contracts
-                SET registry_meta_json = :registry_meta_json, updated_at = :updated_at WHERE record_number = :number');
-            $statement->execute([
-                ':registry_meta_json' => json_encode($registryMeta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                ':updated_at' => $updatedAt,
-                ':number' => $number,
-            ]);
-            payout_stamp_record($pdo, ['number' => $number, 'amount' => (float) $row['amount'], 'registryMeta' => $registryMeta], $previous);
             $pdo->commit();
             $updatedRecord = null;
             foreach (fetch_records($pdo, $user) as $candidate) {
@@ -818,6 +862,9 @@ try {
                     $record['amount']
                 );
             }
+        }
+        if ($record['status'] === 'exported' && $record['registryMeta']['paymentType'] !== 'Наличка' && invoice_payment_type($record['data'])) {
+            $record['registryMeta']['paymentType'] = invoice_payment_type($record['data']);
         }
         assert_paid_status_has_no_remainder($record['registryMeta'], $record['amount']);
         save_record($pdo, $record, $user);

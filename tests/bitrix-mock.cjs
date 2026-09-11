@@ -7,6 +7,7 @@ global.fetch = async (url, options) => {
   const params = JSON.parse(options.body);
   let result;
   if (url.pathname.endsWith('/crm.deal.get.json')) result = {...fixture.deal, ID: String(params.id)};
+  else if (url.pathname.endsWith('/crm.deal.list.json')) result = Array.from({length:8},(_,i)=>({ID:String(18020-i),CREATED_BY_ID:fixture.creator.ID}));
   else if (url.pathname.endsWith('/user.get.json')) result = [fixture.creator];
   else if (url.pathname.endsWith('/crm.status.list.json')) result = [{STATUS_ID:params.filter.STATUS_ID,NAME:params.filter.ENTITY_ID === 'SOURCE' ? fixture.source : fixture.stageName}];
   else throw new Error('Unexpected test method');

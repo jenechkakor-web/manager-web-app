@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Реестр сделок</title>
-    <link rel="stylesheet" href="styles.css?v=20260702-deals-prod-1" />
+    <link rel="stylesheet" href="styles.css?v=20260911-bitrix-local-rules-1" />
   </head>
   <body>
     <main class="app-shell">
@@ -36,6 +36,7 @@
                 <button class="button ghost" id="reloadRegistryButton" type="button">Обновить</button>
                 <button class="button ghost" id="columnSettingsButton" type="button">Настроить столбцы</button>
                 <button class="button primary" id="addDealButton" type="button">Добавить сделку</button>
+                <button class="button primary" id="refreshBitrixRecentButton" type="button" title="Загрузить пять последних сделок из Б24 для вашей учётной записи">Обновить данные с Б24</button>
               </div>
               <label class="registry-scale-control" for="registryScaleInput">
                 <span>Масштаб таблицы</span>
@@ -45,9 +46,14 @@
             </div>
           </header>
           <section class="form-area library-content">
+            <section class="registry-summary panel" aria-label="Свод по суммам">
+              <div class="registry-summary-header">
+                <h2>Свод по выбранным договорам</h2>
+                <span id="registrySummaryCount">В выборке: 0</span>
+              </div>
+              <div class="registry-summary-grid" id="registrySummary"></div>
+            </section>
             <section class="panel registry-panel">
-              <div class="registry-sheet-viewport" id="registrySheetViewport">
-                <div class="registry-sheet" id="registrySheet">
               <div class="registry-toolbar">
                 <label>
                   <span>Поиск по номеру, названию или контрагенту</span>
@@ -97,12 +103,12 @@
                   <span>Закрывашки</span>
                   <select id="registryClosingDocsFilter"><option value="">Все варианты</option></select>
                 </label>
-                <label class="hidden" data-admin-only>
-                  <span>Менеджер</span>
-                  <select id="registryManagerFilter"><option value="">Все менеджеры</option></select>
-                </label>
               </div>
+              <div id="registryManagerFilter" class="registry-manager-buttons hidden" data-admin-only role="group" aria-label="Фильтр по менеджеру"></div>
               <p class="status-line" id="registryStatus"></p>
+              <p class="status-line" id="bitrixRecentStatus" role="status" aria-live="polite"></p>
+              <div class="registry-sheet-viewport" id="registrySheetViewport">
+                <div class="registry-sheet" id="registrySheet">
               <div class="registry-table-wrap">
                 <table class="registry-table">
                   <colgroup>
@@ -149,13 +155,6 @@
                 </table>
                 <div class="registry-empty hidden" id="registryEmpty">В реестре пока нет сделок.</div>
               </div>
-              <section class="registry-summary" aria-label="Свод по суммам">
-                <div class="registry-summary-header">
-                  <h2>Свод по выбранным договорам</h2>
-                  <span id="registrySummaryCount">В выборке: 0</span>
-                </div>
-                <div class="registry-summary-grid" id="registrySummary"></div>
-              </section>
                 </div>
               </div>
               <div class="registry-sticky-scrollbar hidden" id="registryStickyScrollbar" aria-label="Горизонтальная прокрутка таблицы">
@@ -221,7 +220,7 @@
       </section>
     </div>
     <script src="auth.js?v=20260702-deals-prod-1"></script>
-    <script src="registry-storage-sync.js?v=20260910-bitrix-2"></script>
-    <script src="registry.js?v=20260910-status-filter-1"></script>
+    <script src="registry-storage-sync.js?v=20260911-bitrix-local-rules-1"></script>
+    <script src="registry.js?v=20260911-bitrix-local-rules-1"></script>
   </body>
 </html>

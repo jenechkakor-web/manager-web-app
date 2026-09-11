@@ -60,7 +60,7 @@ button {
   [data-document-page="proposal"] .topbar { grid-template-columns: minmax(0, 1fr); justify-content: stretch; }
 }
 
-/* Registry working sheet: search, filters, table and summary share one width. */
+/* Only the table scrolls horizontally; controls fit the available page width. */
 .registry-panel {
   overflow: visible;
   padding: 0;
@@ -996,7 +996,7 @@ fieldset {
 
 .registry-filters {
   display: grid;
-  grid-template-columns: minmax(240px, 1.4fr) repeat(5, minmax(145px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   gap: 10px;
   margin-top: 12px;
 }
@@ -1885,12 +1885,18 @@ fieldset {
 .registry-summary {
   display: grid;
   gap: 12px;
-  margin-top: 16px;
+  margin-top: 0;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #fbfcfc;
 }
+
+.registry-manager-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 10px; }
+.registry-manager-buttons.hidden { display: none; }
+.registry-manager-buttons .button { padding: 8px 12px; min-height: 36px; font-size: 13px; }
+.registry-manager-buttons .button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--line); }
+#bitrixRecentStatus:empty { display: none; }
 
 .sidebar-toggle {
   position: absolute;

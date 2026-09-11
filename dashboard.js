@@ -118,7 +118,6 @@ function hasPaymentRemainder(record, prepayment = record.registryMeta?.prepaymen
 }
 
 function dealBucket(record) {
-  if (record.registryMeta?.bitrix) return ({ "Завершена": "closed", "В работе": "active" })[record.registryMeta.bitrix.dealStatus] || "planned";
   const { paymentStatus, closingDocs } = record.registryMeta || {};
   const closingComplete = closingDocs === "Отправлены" || closingDocs === "Не нужно";
   if (paymentStatus === "Да" && !hasPaymentRemainder(record) && closingComplete) return "closed";

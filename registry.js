@@ -1,5 +1,7 @@
 const searchInput = document.querySelector("#registrySearchInput");
 const reloadButton = document.querySelector("#reloadRegistryButton");
+const refreshBitrixRecentButton = document.querySelector('#refreshBitrixRecentButton');
+const bitrixRecentStatus = document.querySelector('#bitrixRecentStatus');
 const statusLine = document.querySelector("#registryStatus");
 const tableBody = document.querySelector("#registryTableBody");
 const emptyState = document.querySelector("#registryEmpty");
@@ -48,6 +50,8 @@ const tableScaleInput = document.querySelector("#registryScaleInput");
 const tableScaleOutput = document.querySelector("#registryScaleOutput");
 
 let records = [];
+let managerUsers = [];
+let selectedManager = '';
 let editingCell = null;
 let sortState = { field: "date", direction: "desc" };
 let appliedDateRange = { from: "", to: "" };
@@ -357,7 +361,12 @@ function renderFilterOptions() {
   setFilterOptions(dealStatusFilter, ["Планируется", "В работе", "Завершена"], "Все статусы");
   setFilterOptions(paymentTypeFilter, window.ContractRegistry.PAYMENT_TYPE_OPTIONS, "Все варианты");
   setFilterOptions(closingDocsFilter, window.ContractRegistry.CLOSING_DOCS_OPTIONS, "Все варианты");
-  setFilterOptions(managerFilter, managers, "Все менеджеры");
+  const availableManagers = [...new Set([...managerUsers.map(user=>user.login), ...managers])];
+  if (selectedManager && !availableManagers.includes(selectedManager)) selectedManager = '';
+  managerFilter.innerHTML = ['', ...availableManagers].map(login => {
+    const label = login ? (managerUsers.find(user=>user.login===login)?.fullName || login) : 'Все менеджеры';
+    return `<button type="button" class="button ${selectedManager===login?'primary':'ghost'}" data-manager-login="${escapeHtml(login)}" aria-pressed="${selectedManager===login}">${escapeHtml(label)}</button>`;
+  }).join('');
 }
 
 function bonusAmount(record) {
@@ -378,7 +387,6 @@ function hasPaymentRemainder(record, prepayment = record.registryMeta.prepayment
 }
 
 function dealStatus(record) {
-  if (record.registryMeta.bitrix) return record.registryMeta.bitrix.dealStatus;
   const { paymentStatus, closingDocs } = record.registryMeta;
   const closingComplete = closingDocs === "Отправлены" || closingDocs === "Не нужно";
   if (paymentStatus === "Да" && !hasPaymentRemainder(record) && closingComplete) return "Завершена";
@@ -581,7 +589,7 @@ function filteredRecords() {
       (!dealStatusFilter.value || dealStatus(record) === dealStatusFilter.value) &&
       (!paymentTypeFilter.value || meta.paymentType === paymentTypeFilter.value) &&
       (!closingDocsFilter.value || meta.closingDocs === closingDocsFilter.value) &&
-      (!managerFilter.value || ownerLogin === managerFilter.value)
+      (!selectedManager || ownerLogin === selectedManager)
     );
   });
   return sortRecords(filtered);
@@ -652,6 +660,11 @@ function markupCell(content, extraClass = "", column = "") {
 
 function editableDisplayValue(record, field) {
   const meta = record.registryMeta;
+  if (field === 'date') return formatDate(record.date);
+  if (field === 'counterparty') return record.counterparty || 'Без контрагента';
+  if (field === 'amount') return money(record.amount);
+  if (field === 'recordStatus') return statusLabel(record.status);
+  if (field === 'manager') return managerUsers.find(user=>user.login===record.ownerLogin)?.fullName || record.ownerLogin;
   if (field === "title") return meta.title || "Без названия";
   if (field === "source") return meta.source || "Не указано";
   if (field === "paymentStatus") return meta.paymentStatus;
@@ -665,7 +678,12 @@ function editableDisplayValue(record, field) {
 
 function editorMarkup(record, field) {
   const meta = record.registryMeta;
-  const common = `data-registry-editor data-registry-field="${field}" aria-label="${escapeHtml(field)}"`;
+  const common = `data-registry-editor data-registry-field="${field}" aria-label="${escapeHtml(REGISTRY_COLUMNS.find(column=>column.id===field)?.label || field)}"`;
+  if (field === 'date') return `<input class="registry-control registry-cell-editor" ${common} type="date" required value="${escapeHtml(record.date)}" />`;
+  if (field === 'counterparty') return `<input class="registry-control registry-cell-editor" ${common} type="text" maxlength="191" value="${escapeHtml(record.counterparty)}" />`;
+  if (field === 'amount') return `<input class="registry-control registry-cell-editor" ${common} type="number" min="${meta.prepayment}" max="9999999999999.99" required step="0.01" value="${plainMoney(record.amount)}" />`;
+  if (field === 'manager') return `<select class="registry-control registry-cell-editor" ${common}>${managerUsers.map(user=>`<option value="${escapeHtml(user.login)}" ${user.login===record.ownerLogin?'selected':''}>${escapeHtml(user.fullName||user.login)}</option>`).join('')}</select>`;
+  if (field === 'recordStatus') return `<select class="registry-control registry-cell-editor" ${common}><option value="draft" ${record.status==='draft'?'selected':''}>черновик</option><option value="exported" ${record.status==='exported'?'selected':''}>выгружен</option></select>`;
   if (field === "title") {
     return `<input class="registry-control registry-cell-editor" ${common} type="text" maxlength="160" value="${escapeHtml(meta.title)}" />`;
   }
@@ -676,7 +694,7 @@ function editorMarkup(record, field) {
     return `<input class="registry-control registry-cell-editor" ${common} type="number" min="0" step="0.01" value="${escapeHtml(plainMoney(bonusAmount(record)))}" />`;
   }
   const optionsByField = {
-    source: [window.ContractRegistry.SOURCE_OPTIONS, "Не указано"],
+    source: [[...new Set([...window.ContractRegistry.SOURCE_OPTIONS,...records.map(item=>item.registryMeta.source).filter(Boolean)])], "Не указано"],
     paymentStatus: [window.ContractRegistry.PAYMENT_STATUS_OPTIONS, null],
     paymentType: [window.ContractRegistry.PAYMENT_TYPE_OPTIONS, "Не указано"],
     closingDocs: [window.ContractRegistry.CLOSING_DOCS_OPTIONS, null],
@@ -695,9 +713,6 @@ function editorMarkup(record, field) {
 }
 
 function editableCell(record, field, enabled = true, extraClass = "") {
-  if (record.registryMeta.bitrix && !canEditField(record, field)) {
-    return staticCell(editableDisplayValue(record, field), extraClass, "Обновляется из Битрикс24", field);
-  }
   const isEditing = enabled && editingCell?.number === record.number && editingCell?.field === field;
   if (isEditing) return `<td class="registry-data-cell is-editing" data-column="${escapeHtml(field)}">${editorMarkup(record, field)}</td>`;
   const value = editableDisplayValue(record, field);
@@ -721,21 +736,21 @@ function render() {
       return `
         <tr data-number="${escapeHtml(record.number)}">
           <td data-column="number"><a class="registry-cell-value registry-number-link" data-open-number="${escapeHtml(record.number)}" href="index.html" title="Открыть форму создания счёта и договора">${escapeHtml(displayRecordNumber(record))}</a></td>
-          ${staticCell(formatDate(record.date), "", formatDate(record.date), "date")}
+          ${editableCell(record, 'date')}
           ${editableCell(record, "title")}
-          ${staticCell(record.counterparty || "Без контрагента", "registry-counterparty", record.counterparty || "Без контрагента", "counterparty")}
-          ${staticCell(money(record.amount), "registry-money-value", money(record.amount), "amount")}
+          ${editableCell(record, 'counterparty', true, 'registry-counterparty')}
+          ${editableCell(record, 'amount', true, 'registry-money-value')}
           ${editableCell(record, "source")}
           ${editableCell(record, "paymentStatus", true, paymentTone(meta.paymentStatus))}
           ${editableCell(record, "prepayment", prepaymentEnabled)}
           ${staticCell(money(remainder(record)), "registry-money-value", money(remainder(record)), "remainder")}
           ${editableCell(record, "paymentType")}
           ${editableCell(record, "closingDocs", true, closingTone(meta.closingDocs))}
-          ${staticCell(currentDealStatus, dealTone(currentDealStatus), meta.bitrix ? `Б24: ${meta.bitrix.stageName}${meta.bitrix.unmappedStage ? " — стадия не сопоставлена" : ""}` : currentDealStatus, "dealStatus")}
+          ${staticCell(currentDealStatus, dealTone(currentDealStatus), "Рассчитывается по оплате и закрывающим документам", "dealStatus")}
           ${editableCell(record, "bonusType")}
           ${editableCell(record, "bonusAmount", profitBonus)}
-          ${isAdmin ? markupCell(`<span class="status-badge ${record.status}">${escapeHtml(statusLabel(record.status))}</span>`, "", "recordStatus") : ""}
-          ${isAdmin ? staticCell(record.ownerLogin || "admin", "", record.ownerLogin || "admin", "manager") : ""}
+          ${isAdmin ? editableCell(record, 'recordStatus') : ""}
+          ${isAdmin ? editableCell(record, 'manager', managerUsers.length > 0) : ""}
           ${
             isAdmin
               ? `<td data-column="delete"><div class="registry-cell-value registry-cell-actions"><button class="icon-button" data-delete-number="${escapeHtml(record.number)}" type="button" title="Удалить сделку">×</button></div></td>`
@@ -751,7 +766,8 @@ function render() {
 }
 
 function canEditField(record, field) {
-  if (record.registryMeta.bitrix && ["title", "source", "paymentStatus", "prepayment"].includes(field)) return false;
+  if (['number','dealStatus','remainder'].includes(field)) return false;
+  if (['manager','recordStatus'].includes(field)) return window.ManagerAuth.isAdmin;
   if (field === "prepayment") return record.registryMeta.paymentStatus === "Да" || record.registryMeta.paymentStatus === "Предоплата";
   if (field === "bonusAmount") return record.registryMeta.bonusType === "от прибыли";
   return true;
@@ -780,7 +796,10 @@ async function commitEditor(control) {
   const record = records.find((item) => item.number === row?.dataset.number);
   if (!record) return;
   const field = control.dataset.registryField;
-  const previousMeta = { ...record.registryMeta };
+  if (!canEditField(record,field)) return;
+  if (!control.reportValidity()) return;
+  const previousRecord = structuredClone(record);
+  const previousMeta = previousRecord.registryMeta;
   const value = control.type === "number"
     ? Math.max(0, Number(control.value) || 0)
     : field === "title"
@@ -812,7 +831,10 @@ async function commitEditor(control) {
   control.setCustomValidity("");
   control.dataset.committing = "true";
   const fields = paidInFull ? { paymentStatus: "Да", prepayment: record.amount } : { [field]: value };
-  record.registryMeta = { ...record.registryMeta, ...fields };
+  if (['date','counterparty','amount'].includes(field)) record[field] = value;
+  else if (field === 'recordStatus') record.status = value;
+  else if (field === 'manager') record.ownerLogin = value;
+  else record.registryMeta = { ...record.registryMeta, ...fields };
   editingCell = null;
   setStatus(`Сохраняю изменения по сделке ${displayRecordNumber(record)}...`);
   setTimeout(() => {
@@ -822,12 +844,13 @@ async function commitEditor(control) {
     const result = await window.ContractRegistry.updateRegistryMeta(record.number, fields);
     if (result.records.length) records = result.records;
     const currentRecord = records.find((item) => item.number === record.number);
-    if (result.record && currentRecord) currentRecord.registryMeta = result.record.registryMeta;
+    if (result.record && currentRecord) Object.assign(currentRecord, result.record);
+    renderFilterOptions();
     if (!editingCell) render();
     setStatus(`Изменения по сделке ${displayRecordNumber(record)} сохранены.`);
   } catch (error) {
     const currentRecord = records.find((item) => item.number === record.number);
-    if (currentRecord) currentRecord.registryMeta = previousMeta;
+    if (currentRecord) Object.assign(currentRecord, previousRecord);
     if (!editingCell) render();
     setStatus(error.message || "Не удалось сохранить изменения в реестре.");
   }
@@ -863,6 +886,8 @@ async function openRecord(number) {
   }
   const data = {
     ...record.data,
+    contractDate: record.date || record.data?.contractDate,
+    customer: {...record.data?.customer, name: record.counterparty || record.data?.customer?.name || ''},
     contractNumber: isNumberlessDeal(record) ? "" : (record.data?.contractNumber || record.number),
     registryDealTitle: record.registryMeta.title || "",
     registryDealSource: record.registryMeta.source || "",
@@ -1114,7 +1139,7 @@ addDealModal.addEventListener("keydown", (event) => {
   }
 });
 searchInput.addEventListener("input", render);
-[sourceFilter, paymentStatusFilter, dealStatusFilter, paymentTypeFilter, closingDocsFilter, managerFilter].forEach((filter) => {
+[sourceFilter, paymentStatusFilter, dealStatusFilter, paymentTypeFilter, closingDocsFilter].forEach((filter) => {
   filter.addEventListener("change", render);
 });
 monthFilter.addEventListener("change", () => {
@@ -1272,8 +1297,49 @@ tableBody.addEventListener("change", (event) => {
   }
 });
 
+managerFilter.addEventListener('click', event => {
+  const button=event.target.closest('[data-manager-login]');
+  if (!button || !window.ManagerAuth.isAdmin) return;
+  selectedManager=button.dataset.managerLogin;
+  editingCell=null;
+  renderFilterOptions();
+  render();
+});
+
+refreshBitrixRecentButton.addEventListener('click', async () => {
+  if (!window.ManagerAuth.usesServerAuth) { bitrixRecentStatus.textContent='Обновление из Б24 доступно на рабочем сайте после входа.'; return; }
+  if (editingCell) { bitrixRecentStatus.textContent='Сначала сохраните редактируемую ячейку.'; return; }
+  refreshBitrixRecentButton.disabled=true;
+  const request=async body=>{
+    const response=await fetch('/api/bitrix/recent',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const result=await response.json().catch(()=>({}));
+    if (!response.ok) throw new Error(result.error||'Не удалось обновить данные из Б24.');
+    return result;
+  };
+  try {
+    bitrixRecentStatus.textContent='Ищу пять последних сделок в Б24 для вашей учётной записи…';
+    const batch=await request({action:'prepare'}), problems=[];
+    let updated=0;
+    const skipped={record_deleted:'ранее удалена из реестра',creator_mismatch:'не совпадает менеджер',link_conflict:'проверьте связь с Б24',manager_not_allowed_or_unmapped:'не найден менеджер',stale_snapshot:'в реестре уже более свежие данные'};
+    for (const [index,dealId] of batch.dealIds.entries()) {
+      bitrixRecentStatus.textContent=`Обновляю ваши сделки: ${index+1} из ${batch.dealIds.length}…`;
+      try {
+        const result=await request({dealId,runId:batch.runId});
+        if (result.synced) updated++;
+        else problems.push(`№${dealId}: ${skipped[result.skipped]||'пропущена'}`);
+      } catch(error) { problems.push(`№${dealId}: ${error.message}`); }
+    }
+    await loadRecords();
+    bitrixRecentStatus.textContent=batch.dealIds.length ? `Обновлено ваших сделок: ${updated} из ${batch.dealIds.length}.${problems.length?' '+problems.join('; '):''}` : 'В Б24 пока нет сделок, созданных вами.';
+  } catch(error) { bitrixRecentStatus.textContent=error.message; }
+  finally { refreshBitrixRecentButton.disabled=false; }
+});
+
 async function initRegistry() {
   await window.ManagerAuth.ready;
+  if (window.ManagerAuth.isAdmin) {
+    try { const response=await fetch('/api/users',{cache:'no-store'}); if(response.ok) managerUsers=await response.json(); } catch {}
+  }
   loadColumnPreferences();
   loadTableScale();
   setupColumnDragging();

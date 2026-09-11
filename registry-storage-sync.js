@@ -39,7 +39,7 @@
       paymentStatus: choice(source.paymentStatus, PAYMENT_STATUS_OPTIONS, "Планируется"),
       prepayment,
       prepaymentOverridden: source.prepaymentOverridden === true,
-      paymentType: choice(source.paymentType, PAYMENT_TYPE_OPTIONS, ""),
+      paymentType: choice(source.paymentType || (record.status === 'exported' ? ({ip:'ИП',ooo:'ООО'})[data?.sellerKey] : ''), PAYMENT_TYPE_OPTIONS, ""),
       closingDocs: choice(source.closingDocs, CLOSING_DOCS_OPTIONS, "Не отправлены"),
       bonusType: choice(source.bonusType, BONUS_TYPE_OPTIONS, "12%"),
       bonusAmount: roundMoney(Math.max(0, Number(source.bonusAmount) || 0)),
@@ -108,6 +108,9 @@
           : templatePrepayment(normalized.data, normalized.amount),
       };
     }
+    if (normalized.status==='exported' && normalized.registryMeta.paymentType!=='Наличка') {
+      normalized.registryMeta.paymentType=({ip:'ИП',ooo:'ООО'})[normalized.data?.sellerKey] || normalized.registryMeta.paymentType;
+    }
     return mergeRecords([normalized], removeFrom(records, normalized.number));
   }
 
@@ -171,6 +174,8 @@
       const record = records.find((item) => item.number.toLowerCase() === key);
       if (!record) throw new Error("Договор не найден в реестре.");
       const nextFields = { ...record.registryMeta, ...fields };
+      for (const field of ['date','counterparty','amount']) if (Object.hasOwn(fields,field)) record[field]=fields[field];
+      if (Object.hasOwn(fields,'recordStatus')) record.status=fields.recordStatus;
       if (Object.prototype.hasOwnProperty.call(fields, "prepayment")) nextFields.prepaymentOverridden = true;
       record.registryMeta = normalizeRegistryMeta({ registryMeta: nextFields }, record.data, record.amount);
       record.updatedAt = new Date().toISOString();

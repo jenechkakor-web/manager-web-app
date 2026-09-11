@@ -15,6 +15,7 @@ const port = Number(process.env.PORT || 4173);
 const adminLogin = process.env.ADMIN_LOGIN || "admin";
 const adminPassword = process.env.ADMIN_PASSWORD || "admin2026";
 const sessions = new Map();
+const bitrixRecentBatches = new Map();
 let mutationQueue = Promise.resolve();
 function serializeMutation(action) {
   const result = mutationQueue.then(action);
@@ -101,6 +102,7 @@ function templatePrepayment(data, amount) {
   return roundMoney((amount * percent) / 100);
 }
 
+function invoicePaymentType(data) { return ({ip:'ИП',ooo:'ООО'})[data?.sellerKey] || ''; }
 function normalizeRegistryMeta(entry, data, amount) {
   const source = entry?.registryMeta && typeof entry.registryMeta === "object" ? entry.registryMeta : entry || {};
   const rawPrepayment = source.prepayment;
@@ -114,7 +116,7 @@ function normalizeRegistryMeta(entry, data, amount) {
     paymentStatus: normalizeChoice(source.paymentStatus, PAYMENT_STATUS_OPTIONS, "Планируется"),
     prepayment,
     prepaymentOverridden: source.prepaymentOverridden === true,
-    paymentType: normalizeChoice(source.paymentType, PAYMENT_TYPE_OPTIONS, ""),
+    paymentType: normalizeChoice(source.paymentType || (entry.status === 'exported' ? invoicePaymentType(data) : ''), PAYMENT_TYPE_OPTIONS, ""),
     closingDocs: normalizeChoice(source.closingDocs, CLOSING_DOCS_OPTIONS, "Не отправлены"),
     bonusType: normalizeChoice(source.bonusType, BONUS_TYPE_OPTIONS, "12%"),
     bonusAmount: roundMoney(Math.max(0, Number(source.bonusAmount) || 0)),
@@ -207,23 +209,61 @@ function fullName(value = "") {
   return value.trim().replace(/\s+/gu, " ");
 }
 
+function applyRegistryFields(previous, fields, user, users) {
+  const record=structuredClone(previous), fail=(message,status=400)=>Object.assign(new Error(message),{status});
+  const allowed=['date','counterparty','amount','recordStatus','manager','title','source','paymentStatus','prepayment','paymentType','closingDocs','bonusType','bonusAmount','bitrix'];
+  if (Object.keys(fields).some(key=>!allowed.includes(key))) throw fail('Это поле нельзя редактировать.');
+  for (const key of ['date','counterparty','title','source','recordStatus','manager','paymentStatus','paymentType','closingDocs','bonusType']) {
+    if (Object.hasOwn(fields,key) && (typeof fields[key]!=='string' || fields[key].length>191 || /[\x00-\x1f\x7f]/.test(fields[key]))) throw fail('Некорректное значение поля.');
+  }
+  for (const key of ['amount','prepayment','bonusAmount']) if (Object.hasOwn(fields,key)) {
+    if (!['number','string'].includes(typeof fields[key]) || fields[key]==='' || !Number.isFinite(Number(fields[key])) || fields[key]<0 || fields[key]>9999999999999.99) throw fail('Некорректная сумма.');
+    fields[key]=roundMoney(Number(fields[key]));
+  }
+  if (Object.hasOwn(fields,'date') && !require('./api/payouts-local.cjs').validDate(fields.date)) throw fail('Некорректная дата.');
+  if ((Object.hasOwn(fields,'manager') || Object.hasOwn(fields,'recordStatus')) && user.role!=='admin') throw fail('Недостаточно прав.',403);
+  if (Object.hasOwn(fields,'recordStatus')) {
+    if (!['draft','exported'].includes(fields.recordStatus)) throw fail('Некорректный статус записи.');
+    record.status=fields.recordStatus;
+  }
+  if (Object.hasOwn(fields,'manager')) {
+    const target=users.find(u=>u.login===fields.manager);
+    if (!target) throw fail('Менеджер не найден.');
+    record.ownerId=target.id;
+  }
+  for (const key of ['date','counterparty','amount']) if (Object.hasOwn(fields,key)) record[key]=fields[key];
+  if (previous.registryMeta.paymentStatus==='Предоплата' && fields.paymentStatus==='Да') fields.prepayment=record.amount;
+  const meta={...record.registryMeta,...Object.fromEntries(Object.entries(fields).filter(([key])=>Object.hasOwn(record.registryMeta,key)))};
+  if (Object.hasOwn(fields,'prepayment')) {
+    if (!['Да','Предоплата'].includes(meta.paymentStatus)) throw fail('Предоплата доступна для оплаченных сделок и сделок с предоплатой.',409);
+    meta.prepaymentOverridden=true;
+  }
+  if (Object.hasOwn(fields,'bonusAmount') && meta.bonusType!=='от прибыли') throw fail('Сумма бонуса редактируется только для типа «от прибыли».',409);
+  if (meta.prepayment>record.amount) throw fail('Предоплата не может превышать сумму сделки.',409);
+  record.registryMeta=normalizeRegistryMeta({registryMeta:meta},record.data,record.amount);
+  bitrix.preserveCrmFields(record,previous);
+  assertPaidStatusHasNoRemainder(record.registryMeta,record.amount);
+  record.updatedAt=new Date().toISOString();
+  return stampQualification(record,previous);
+}
 function existingBitrixId(record, config) {
   const link = record.registryMeta.bitrix;
   if (link) return link.domain === bitrix.endpoint(config).hostname ? bitrix.id(link.dealId) : '';
   return bitrix.id(record.number);
 }
-async function refreshBitrixRecord(body, config, admin) {
+async function refreshBitrixRecord(body, config, admin, expectedOwnerId = null) {
   if (typeof body.number !== 'string' || !body.number || body.number.length > 191 || !/^[a-f0-9-]{36}$/.test(body.runId || '')) {
     throw Object.assign(new Error('Некорректный запрос обновления реестра.'), {status:400});
   }
   const records = (await readJson(registryPath)).map(record => normalizeRecord(record)).filter(Boolean);
   const previous = records.find(record => record.number === body.number);
   if (!previous) return {number:body.number, skipped:'record_deleted'};
+  if (expectedOwnerId !== null && previous.ownerId !== expectedOwnerId) throw Object.assign(new Error('Можно обновить только свои сделки.'),{status:403});
   const dealId = existingBitrixId(previous, config);
   if (!dealId) return {number:body.number, skipped:'needs_deal_id'};
-  return syncBitrixDeal(dealId, config, {number:body.number,runId:body.runId,actorId:admin.id});
+  return syncBitrixDeal(dealId, config, {number:body.number,runId:body.runId,actorId:admin.id}, expectedOwnerId);
 }
-async function syncBitrixDeal(dealId, config, refresh = null) {
+async function syncBitrixDeal(dealId, config, refresh = null, expectedOwnerId = null) {
   if (!bitrix.id(dealId)) throw Object.assign(new Error("Б24: некорректный ID сделки."), { status: 400 });
   const domain = bitrix.endpoint(config).hostname;
   const deleted = await readJson(path.join(dataDir, "bitrix-deleted.json"));
@@ -233,10 +273,14 @@ async function syncBitrixDeal(dealId, config, refresh = null) {
   const oldAudit = refresh && history.find(item => item.runId === refresh.runId && item.number === refresh.number);
   if (oldAudit?.result) return oldAudit.result;
   const snapshot = await bitrix.fetchSnapshot(dealId, config, bitrix.createClient(config));
+  if (expectedOwnerId !== null && bitrix.resolveManager(snapshot.creator,await readJson(usersPath),config)?.id !== expectedOwnerId) {
+    throw Object.assign(new Error('Можно обновить только свои сделки.'),{status:403});
+  }
   const records = (await readJson(registryPath)).map(record => normalizeRecord(record)).filter(Boolean);
   const linked = records.find(record => record.registryMeta.bitrix?.dealId === dealId && record.registryMeta.bitrix.domain === domain);
   if (refresh && linked && linked.number !== refresh.number) return {skipped:'link_conflict'};
   const previous = refresh ? records.find(record => record.number === refresh.number) : linked;
+  if (previous && expectedOwnerId !== null && previous.ownerId !== expectedOwnerId) throw Object.assign(new Error('Можно обновить только свои сделки.'),{status:403});
   if (refresh && (!previous || existingBitrixId(previous,config) !== dealId)) return {skipped:'link_conflict'};
   const mapped = bitrix.mapSnapshot(snapshot, config, await readJson(usersPath), previous);
   if (mapped.skipped) return mapped;
@@ -249,10 +293,10 @@ async function syncBitrixDeal(dealId, config, refresh = null) {
   if (!previous && records.some(item => item.number.toLowerCase() === record.number.toLowerCase())) {
     throw Object.assign(new Error("Номер Б24 уже занят в реестре. Существующая запись сохранена."), { status: 409 });
   }
-  const result = {synced:true,number:record.number,dealStatus:record.registryMeta.bitrix.dealStatus,unmappedStage:record.registryMeta.bitrix.unmappedStage};
+  const result = {synced:true,number:record.number};
   let audit = oldAudit;
   if (refresh) {
-    Object.assign(result,{title:record.registryMeta.title,stageName:record.registryMeta.bitrix.stageName,amount:record.amount,paymentStatus:record.registryMeta.paymentStatus});
+    Object.assign(result,{title:record.registryMeta.title,amount:record.amount,paymentStatus:record.registryMeta.paymentStatus});
     if (!audit) {
       audit = {...refresh,refreshedAt:new Date().toISOString(),previous};
       history.push(audit);
@@ -310,6 +354,25 @@ async function handleApi(req, res, url) {
     const config = await bitrix.loadConfig(dataDir);
     const dealId = bitrix.authenticate(await bitrix.readEvent(req), config);
     return sendJson(res, 200, dealId ? await syncBitrixDeal(dealId, config) : { skipped: "unsupported_event" });
+  }
+  if (pathname === '/api/bitrix/recent' && req.method === 'POST') {
+    const user = await requireUser(req);
+    if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return sendJson(res,403,{error:'Запрещённый источник запроса.'});
+    const body=await readJsonBody(req), config=await bitrix.loadConfig(dataDir), key=cookies(req).manager_app_session;
+    if (body.action === 'prepare') {
+      const dealIds=await bitrix.recentIds(config,await readJson(usersPath),user,bitrix.createClient(config));
+      const batch={runId:crypto.randomUUID(),dealIds,expiresAt:Date.now()+1800000};
+      bitrixRecentBatches.set(key,batch);
+      return sendJson(res,200,{runId:batch.runId,dealIds});
+    }
+    const batch=bitrixRecentBatches.get(key), dealId=bitrix.id(body.dealId);
+    if (!batch || batch.expiresAt < Date.now() || batch.runId !== body.runId || !batch.dealIds.includes(dealId)) {
+      return sendJson(res,403,{error:'Список обновления устарел. Нажмите «Обновить данные с Б24» ещё раз.'});
+    }
+    const previous=(await readJson(registryPath)).map(r=>normalizeRecord(r)).find(r=>r && r.ownerId===user.id && existingBitrixId(r,config)===dealId);
+    const result=previous ? await refreshBitrixRecord({number:previous.number,runId:batch.runId},config,user,user.id)
+      : await syncBitrixDeal(dealId,config,null,user.id);
+    return sendJson(res,200,result);
   }
   if (pathname === "/api/bitrix/status" && req.method === "GET") {
     await requireAdmin(req);
@@ -523,24 +586,10 @@ async function handleApi(req, res, url) {
           throw Object.assign(new Error("Нельзя изменить договор другого пользователя."), { status: 403 });
         }
         const fields = body.fields && typeof body.fields === "object" ? body.fields : {};
-        if (existing.registryMeta.paymentStatus === "Предоплата" && fields.paymentStatus === "Да") {
-          fields.prepayment = existing.amount;
-        }
-        const mergedFields = { ...existing.registryMeta, ...fields };
-        if (Object.prototype.hasOwnProperty.call(fields, "prepayment")) mergedFields.prepaymentOverridden = true;
-        const nextRegistryMeta = normalizeRegistryMeta(
-          { registryMeta: mergedFields },
-          existing.data,
-          existing.amount,
-        );
-        bitrix.preserveCrmFields({ registryMeta: nextRegistryMeta }, existing);
-        assertPaidStatusHasNoRemainder(nextRegistryMeta, existing.amount);
-        const previousRecord = { ...existing };
-        existing.registryMeta = nextRegistryMeta;
-        stampQualification(existing, previousRecord);
-        existing.updatedAt = new Date().toISOString();
+        const updated = applyRegistryFields(existing,fields,user,users);
+        Object.assign(existing,updated);
         await writeJson(registryPath, records);
-        sendJson(res, 200, { record: existing });
+        sendJson(res, 200, { record: recordsForUser([existing],users,user)[0] });
         return;
       }
       if (body.action === "delete") {
@@ -573,6 +622,7 @@ async function handleApi(req, res, url) {
             : templatePrepayment(incoming.data, incoming.amount),
         };
       }
+      if (incoming.status==='exported' && incoming.registryMeta.paymentType!=='Наличка' && invoicePaymentType(incoming.data)) incoming.registryMeta.paymentType=invoicePaymentType(incoming.data);
       bitrix.preserveCrmFields(incoming, existing);
       assertPaidStatusHasNoRemainder(incoming.registryMeta, incoming.amount);
       stampQualification(incoming, existing);

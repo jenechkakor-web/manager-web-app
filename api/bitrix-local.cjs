@@ -99,11 +99,6 @@ async function fetchSnapshot(dealId, config, call) {
   const creators = await call('user.get', { ID: deal.CREATED_BY_ID });
   const creator = Array.isArray(creators) ? creators.find(user => id(user.ID) === id(deal.CREATED_BY_ID)) : null;
   if (!creator) throw fail('Б24: создатель сделки недоступен.');
-  const category = text(deal.CATEGORY_ID || '0');
-  if (!/^\d+$/.test(category)) throw fail('Б24: некорректная воронка.');
-  const stages = await call('crm.status.list', { filter: { ENTITY_ID: category === '0' ? 'DEAL_STAGE' : `DEAL_STAGE_${category}`, STATUS_ID: deal.STAGE_ID } });
-  const stage = Array.isArray(stages) ? stages.find(item => item.STATUS_ID === deal.STAGE_ID) : null;
-  if (!stage) throw fail('Б24: стадия сделки недоступна.');
   let source = '';
   if (text(deal.SOURCE_ID)) {
     const sources = await call('crm.status.list', { filter: { ENTITY_ID: 'SOURCE', STATUS_ID: deal.SOURCE_ID } });
@@ -111,44 +106,29 @@ async function fetchSnapshot(dealId, config, call) {
     if (!entry) throw fail('Б24: источник сделки недоступен.');
     source = text(entry.NAME);
   }
-  return { deal, creator, stageName: text(stage.NAME), source };
+  return { deal, creator, source };
 }
 
 function mapSnapshot(snapshot, config, users, previous = null) {
-  const { deal, creator, stageName, source } = snapshot;
+  const { deal, creator, source } = snapshot;
   const manager = resolveManager(creator, users, config);
   if (!manager) return { skipped: 'manager_not_allowed_or_unmapped' };
-  const status = stageStatus(stageName);
-  // Unknown stages remain visible but never complete/accrue a bonus.
-  const dealStatus = status || 'Планируется';
   const currency = text(deal.CURRENCY_ID);
   if (currency !== 'RUB' && currency !== 'RUR') throw fail('Б24: реестр поддерживает только суммы в рублях.', 409);
   const amount = money(deal.OPPORTUNITY);
-  const date = text(deal.DATE_CREATE).slice(0, 10);
+  const date = previous?.date ?? new Intl.DateTimeFormat('sv-SE', {timeZone:'Europe/Moscow'}).format(new Date());
   const modifiedAt = text(deal.DATE_MODIFY);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(modifiedAt))) throw fail('Б24: некорректная дата сделки.');
-  let paid = 0;
-  if (config.paidAmountField) {
-    if (!Object.hasOwn(deal, config.paidAmountField)) throw fail('Б24: поле фактической оплаты отсутствует.');
-    const value = deal[config.paidAmountField];
-    // Portal convention: an empty advance field means the entire deal is paid.
-    paid = value === '' || value === null || value === false ? amount : money(value);
+  if (!Number.isFinite(Date.parse(modifiedAt))) throw fail('Б24: некорректная дата изменения.');
+  const paid = Number(previous?.registryMeta?.prepayment) || 0;
+  if (paid > amount || (previous?.registryMeta?.paymentStatus === 'Да' && paid < amount)) {
+    throw fail('Сумма Б24 противоречит оплате в реестре. Проверьте сумму и предоплату вручную.', 409);
   }
-  if (config.fullPaymentField) {
-    if (!Object.hasOwn(deal, config.fullPaymentField)) throw fail('Б24: поле полной оплаты отсутствует.');
-    const values = config.fullPaymentValues || ['Y', '1', 'Да'];
-    if (values.some(value => text(value) === text(deal[config.fullPaymentField]))) paid = amount;
-  }
-  paid = Math.min(amount, paid);
   const number = text(config.numberField ? deal[config.numberField] : deal.ID);
   if (!number || number.length > 191) throw fail('Б24: номер сделки отсутствует или слишком длинный.');
-  const registryMeta = { ...(previous?.registryMeta || {}), title: text(deal.TITLE),
+  const registryMeta = { paymentStatus:'Планируется', prepayment:0, prepaymentOverridden:true, ...(previous?.registryMeta || {}), title: text(deal.TITLE),
     source: text(config.sourceMap?.[deal.SOURCE_ID] || source),
-    paymentStatus: dealStatus === 'Планируется' ? 'Планируется' : (config.paidAmountField || config.fullPaymentField ? (paid >= amount ? 'Да' : 'Предоплата') : 'Планируется'),
-    prepayment: paid, prepaymentOverridden: true,
     bitrix: { dealId: id(deal.ID), domain: endpoint(config).hostname, creatorId: id(deal.CREATED_BY_ID),
-      stageId: text(deal.STAGE_ID), stageName, dealStatus, unmappedStage: !status, modifiedAt, number,
-      paymentConfigured: Boolean(config.paidAmountField || config.fullPaymentField) } };
+      modifiedAt, number } };
   return { record: { ...(previous || {}), number: previous?.number || number, ownerId: manager.id, date, amount, registryMeta,
     data: previous?.data || {}, updatedAt: new Date().toISOString() } };
 }
@@ -156,11 +136,33 @@ function mapSnapshot(snapshot, config, users, previous = null) {
 function preserveCrmFields(incoming, previous) {
   delete incoming.registryMeta.bitrix;
   if (!previous?.registryMeta?.bitrix) return incoming;
-  for (const key of ['number', 'date', 'amount', 'ownerId']) incoming[key] = previous[key];
-  for (const key of ['title', 'source', 'paymentStatus', 'prepayment', 'prepaymentOverridden', 'bitrix']) incoming.registryMeta[key] = previous.registryMeta[key];
+  incoming.number = previous.number;
+  incoming.registryMeta.bitrix = previous.registryMeta.bitrix;
   return incoming;
 }
 
+async function recentIds(config, users, user, call) {
+  const names = rules.managers.filter(name => {
+    const binding = config.managers?.[name], login = typeof binding === 'string' ? binding : binding?.login;
+    return login ? label(login) === label(user.login) : label(name) === label(user.fullName);
+  });
+  if (names.length !== 1) throw fail('Ваше ФИО не связано с менеджером Б24. Обратитесь к администратору.', 409);
+  const [NAME, LAST_NAME] = names[0].split(' ');
+  const people = await call('user.get', {FILTER:{NAME,LAST_NAME}});
+  const creators = [...new Set((Array.isArray(people) ? people : [])
+    .filter(person => resolveManager(person,users,config)?.id === user.id).map(person=>id(person.ID)).filter(Boolean))];
+  if (creators.length !== 1) throw fail('Не удалось однозначно найти вашего сотрудника в Б24.',409);
+  const creator = creators[0];
+  const rows = await call('crm.deal.list',{filter:{CREATED_BY_ID:creator},order:{DATE_CREATE:'DESC',ID:'DESC'},select:['ID','CREATED_BY_ID','DATE_CREATE'],start:0});
+  if (!Array.isArray(rows)) throw fail('Б24: не удалось получить последние сделки.');
+  const ids=[];
+  for (const row of rows) {
+    if (!id(row.ID) || id(row.CREATED_BY_ID) !== creator) throw fail('Б24 вернул сделку другого создателя. Обновление остановлено.',409);
+    if (!ids.includes(id(row.ID))) ids.push(id(row.ID));
+    if (ids.length === 5) break;
+  }
+  return ids;
+}
 function configFile(dataDir) { return process.env.BITRIX_CONFIG_FILE || path.join(dataDir, 'bitrix.local.json'); }
 async function loadConfig(dataDir) {
   try { return JSON.parse(await fs.readFile(configFile(dataDir), 'utf8')); }
@@ -204,5 +206,5 @@ function configurationStatus(config, users) {
     }) };
 }
 
-module.exports = { rules, stageStatus, resolveManager, authenticate, readEvent, createClient, fetchSnapshot,
+module.exports = { rules, stageStatus, resolveManager, authenticate, readEvent, createClient, fetchSnapshot, recentIds,
   mapSnapshot, preserveCrmFields, loadConfig, saveConfig, updatedConfig, configurationStatus, endpoint, id };

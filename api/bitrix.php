@@ -116,13 +116,6 @@ function bitrix_fetch_snapshot($id, $call)
         if (bitrix_id(bitrix_value($item, 'ID')) === bitrix_id($deal['CREATED_BY_ID'])) $creator = $item;
     }
     if (!$creator) throw new BitrixException('Б24: создатель сделки недоступен.', 502);
-    $category = bitrix_text(bitrix_value($deal, 'CATEGORY_ID', '0'));
-    if (!preg_match('/^\d+$/D', $category)) throw new BitrixException('Б24: некорректная воронка.', 502);
-    $stages = call_user_func($call, 'crm.status.list', ['filter' => [
-        'ENTITY_ID' => $category === '0' ? 'DEAL_STAGE' : 'DEAL_STAGE_' . $category, 'STATUS_ID' => bitrix_value($deal, 'STAGE_ID')]]);
-    $stage = null;
-    foreach (is_array($stages) ? $stages : [] as $item) if (bitrix_value($item, 'STATUS_ID') === bitrix_value($deal, 'STAGE_ID')) $stage = $item;
-    if (!$stage) throw new BitrixException('Б24: стадия сделки недоступна.', 502);
     $source = '';
     if (bitrix_text(bitrix_value($deal, 'SOURCE_ID'))) {
         $sources = call_user_func($call, 'crm.status.list', ['filter' => ['ENTITY_ID' => 'SOURCE', 'STATUS_ID' => $deal['SOURCE_ID']]]);
@@ -131,7 +124,7 @@ function bitrix_fetch_snapshot($id, $call)
         if (!$entry) throw new BitrixException('Б24: источник сделки недоступен.', 502);
         $source = bitrix_text(bitrix_value($entry, 'NAME'));
     }
-    return ['deal' => $deal, 'creator' => $creator, 'stageName' => bitrix_text(bitrix_value($stage, 'NAME')), 'source' => $source];
+    return ['deal' => $deal, 'creator' => $creator, 'source' => $source];
 }
 function bitrix_money($value)
 {
@@ -144,37 +137,23 @@ function bitrix_map_snapshot(array $snapshot, array $config, array $users, $prev
     $deal = $snapshot['deal'];
     $manager = bitrix_manager($snapshot['creator'], $users, $config);
     if (!$manager) return ['skipped' => 'manager_not_allowed_or_unmapped'];
-    $status = bitrix_stage_status($snapshot['stageName']);
-    $dealStatus = $status ?: 'Планируется';
     if (!in_array(bitrix_value($deal, 'CURRENCY_ID'), ['RUB', 'RUR'], true)) throw new BitrixException('Б24: реестр поддерживает только суммы в рублях.', 409);
     $amount = bitrix_money(bitrix_value($deal, 'OPPORTUNITY'));
-    $date = substr(bitrix_text(bitrix_value($deal, 'DATE_CREATE')), 0, 10);
+    $date = bitrix_value($previous, 'date', payout_today());
     $modifiedAt = bitrix_text(bitrix_value($deal, 'DATE_MODIFY'));
-    if (!payout_valid_date($date) || strtotime($modifiedAt) === false) throw new BitrixException('Б24: некорректная дата сделки.', 502);
-    $paid = 0;
-    if (!empty($config['paidAmountField'])) {
-        if (!array_key_exists($config['paidAmountField'], $deal)) throw new BitrixException('Б24: поле фактической оплаты отсутствует.', 502);
-        $value = $deal[$config['paidAmountField']];
-        $paid = $value === '' || $value === null || $value === false ? $amount : bitrix_money($value);
+    if (strtotime($modifiedAt) === false) throw new BitrixException('Б24: некорректная дата изменения.', 502);
+    $previousMeta = bitrix_value($previous, 'registryMeta', []);
+    $paid = (float) bitrix_value($previousMeta, 'prepayment', 0);
+    if ($paid > $amount || (bitrix_value($previousMeta, 'paymentStatus') === 'Да' && $paid < $amount)) {
+        throw new BitrixException('Сумма Б24 противоречит оплате в реестре. Проверьте сумму и предоплату вручную.', 409);
     }
-    if (!empty($config['fullPaymentField'])) {
-        if (!array_key_exists($config['fullPaymentField'], $deal)) throw new BitrixException('Б24: поле полной оплаты отсутствует.', 502);
-        foreach (bitrix_value($config, 'fullPaymentValues', ['Y', '1', 'Да']) as $value) {
-            if (bitrix_text($value) === bitrix_text($deal[$config['fullPaymentField']])) $paid = $amount;
-        }
-    }
-    $paid = min($amount, $paid);
     $number = bitrix_text(bitrix_value($deal, !empty($config['numberField']) ? $config['numberField'] : 'ID'));
     if ($number === '' || preg_match_all('/./us', $number) > 191) throw new BitrixException('Б24: номер сделки отсутствует или слишком длинный.', 502);
-    $meta = array_merge(bitrix_value($previous, 'registryMeta', []), [
+    $meta = array_merge(['paymentStatus' => 'Планируется', 'prepayment' => 0, 'prepaymentOverridden' => true], $previousMeta, [
         'title' => bitrix_text(bitrix_value($deal, 'TITLE')),
         'source' => bitrix_text(bitrix_value(bitrix_value($config, 'sourceMap', []), bitrix_value($deal, 'SOURCE_ID'), $snapshot['source'])),
-        'paymentStatus' => $dealStatus === 'Планируется' ? 'Планируется' : (!empty($config['paidAmountField']) || !empty($config['fullPaymentField']) ? ($paid >= $amount ? 'Да' : 'Предоплата') : 'Планируется'),
-        'prepayment' => $paid, 'prepaymentOverridden' => true,
         'bitrix' => ['dealId' => bitrix_id($deal['ID']), 'domain' => strtolower(parse_url(bitrix_endpoint($config), PHP_URL_HOST)),
-            'creatorId' => bitrix_id($deal['CREATED_BY_ID']), 'stageId' => bitrix_text(bitrix_value($deal, 'STAGE_ID')),
-            'stageName' => $snapshot['stageName'], 'dealStatus' => $dealStatus, 'unmappedStage' => !$status,
-            'modifiedAt' => $modifiedAt, 'number' => $number, 'paymentConfigured' => !empty($config['paidAmountField']) || !empty($config['fullPaymentField'])],
+            'creatorId' => bitrix_id($deal['CREATED_BY_ID']), 'modifiedAt' => $modifiedAt, 'number' => $number],
     ]);
     return ['record' => array_merge($previous ?: [], ['number' => bitrix_value($previous, 'number', $number),
         'ownerId' => $manager['id'], 'date' => $date, 'amount' => $amount, 'registryMeta' => $meta,
@@ -184,8 +163,8 @@ function bitrix_preserve_fields(array $incoming, $previous)
 {
     unset($incoming['registryMeta']['bitrix']);
     if (empty($previous['registryMeta']['bitrix'])) return $incoming;
-    foreach (['number', 'date', 'amount'] as $key) $incoming[$key] = $previous[$key];
-    foreach (['title', 'source', 'paymentStatus', 'prepayment', 'prepaymentOverridden', 'bitrix'] as $key) $incoming['registryMeta'][$key] = $previous['registryMeta'][$key];
+    $incoming['number'] = $previous['number'];
+    $incoming['registryMeta']['bitrix'] = $previous['registryMeta']['bitrix'];
     return $incoming;
 }
 function bitrix_configuration_status(array $config, array $users)
@@ -245,13 +224,53 @@ function bitrix_existing_deal_id(array $record, array $config)
     // Suffixes and numberless invoices may be parts of another deal. Never guess.
     return bitrix_id(bitrix_value($record, 'number'));
 }
-function bitrix_refresh_record(PDO $pdo, array $config, $number, $runId, $actorId, $call = null)
+function bitrix_recent_ids(array $config, array $users, array $user, $call)
+{
+    $names = [];
+    foreach (bitrix_rules()['managers'] as $name) {
+        $binding = bitrix_value(bitrix_value($config, 'managers', []), $name);
+        $login = is_string($binding) ? $binding : bitrix_value($binding, 'login');
+        if ($login ? bitrix_label($login) === bitrix_label($user['login']) : bitrix_label($name) === bitrix_label(bitrix_value($user, 'fullName'))) $names[] = $name;
+    }
+    if (count($names) !== 1) throw new BitrixException('Ваше ФИО не связано с менеджером Б24. Обратитесь к администратору.', 409);
+    $parts = explode(' ', $names[0], 2);
+    $people = call_user_func($call, 'user.get', ['FILTER' => ['NAME' => $parts[0], 'LAST_NAME' => $parts[1]]]);
+    $creators = [];
+    foreach (is_array($people) ? $people : [] as $person) {
+        $mapped = bitrix_manager($person, $users, $config);
+        if ($mapped && (int) $mapped['id'] === (int) $user['id'] && bitrix_id(bitrix_value($person, 'ID'))) $creators[bitrix_id($person['ID'])] = true;
+    }
+    if (count($creators) !== 1) throw new BitrixException('Не удалось однозначно найти вашего сотрудника в Б24.', 409);
+    $creator = (string) key($creators);
+    $rows = call_user_func($call, 'crm.deal.list', ['filter' => ['CREATED_BY_ID' => $creator],
+        'order' => ['DATE_CREATE' => 'DESC', 'ID' => 'DESC'], 'select' => ['ID', 'CREATED_BY_ID', 'DATE_CREATE'], 'start' => 0]);
+    if (!is_array($rows)) throw new BitrixException('Б24: не удалось получить последние сделки.', 502);
+    $ids = [];
+    foreach ($rows as $row) {
+        $id = bitrix_id(bitrix_value($row, 'ID'));
+        if (!$id || bitrix_id(bitrix_value($row, 'CREATED_BY_ID')) !== $creator) throw new BitrixException('Б24 вернул сделку другого создателя. Обновление остановлено.', 409);
+        if (!in_array($id, $ids, true)) $ids[] = $id;
+        if (count($ids) === 5) break;
+    }
+    return $ids;
+}
+function bitrix_recent_sync(PDO $pdo, array $config, $id, $runId, $userId, $call = null)
+{
+    // The batch contains only IDs obtained for this session's creator. Recheck ownership under the deal lock as well.
+    $records = fetch_records($pdo, ['id' => (int) $userId, 'role' => 'user']);
+    foreach ($records as $record) if (bitrix_existing_deal_id($record, $config) === $id) {
+        return bitrix_refresh_record($pdo, $config, $record['number'], $runId, $userId, $call, $userId);
+    }
+    return bitrix_sync($pdo, $config, $id, $call, null, $userId);
+}
+function bitrix_refresh_record(PDO $pdo, array $config, $number, $runId, $actorId, $call = null, $expectedOwnerId = null)
 {
     if (!is_string($number) || $number === '' || strlen($number) > 764 || !is_string($runId)
         || !preg_match('/^[a-f0-9-]{36}$/D', $runId)) throw new BitrixException('Некорректный запрос обновления реестра.', 400);
     $statement = $pdo->prepare('SELECT * FROM manager_contracts WHERE record_number = ?');
     $statement->execute([$number]); $row = $statement->fetch();
     if (!$row) return ['number' => $number, 'skipped' => 'record_deleted'];
+    if ($expectedOwnerId !== null && (int) $row['owner_id'] !== (int) $expectedOwnerId) throw new BitrixException('Можно обновить только свои сделки.', 403);
     $id = bitrix_existing_deal_id(record_from_database_row($row, false), $config);
     if (!$id) return ['number' => $number, 'skipped' => 'needs_deal_id'];
     $pdo->exec("CREATE TABLE IF NOT EXISTS manager_bitrix_refresh_history (
@@ -260,9 +279,9 @@ function bitrix_refresh_record(PDO $pdo, array $config, $number, $runId, $actorI
         actor_id INT UNSIGNED NOT NULL, previous_json LONGTEXT NOT NULL, result_json LONGTEXT NOT NULL,
         PRIMARY KEY (run_id, record_number)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-    return bitrix_sync($pdo, $config, $id, $call, ['number' => $number, 'runId' => $runId, 'actorId' => $actorId]);
+    return bitrix_sync($pdo, $config, $id, $call, ['number' => $number, 'runId' => $runId, 'actorId' => $actorId], $expectedOwnerId);
 }
-function bitrix_sync(PDO $pdo, array $config, $id, $call = null, $refresh = null)
+function bitrix_sync(PDO $pdo, array $config, $id, $call = null, $refresh = null, $expectedOwnerId = null)
 {
     $id = bitrix_id($id);
     if (!$id) throw new BitrixException('Б24: некорректный ID сделки.', 400);
@@ -287,6 +306,10 @@ function bitrix_sync(PDO $pdo, array $config, $id, $call = null, $refresh = null
         if (!$call) $call = static function ($method, $params) use ($config) { return bitrix_call($config, $method, $params); };
         // Fetch after acquiring the lock: out-of-order notifications always read current CRM state.
         $snapshot = bitrix_fetch_snapshot($id, $call);
+        if ($expectedOwnerId !== null) {
+            $manager = bitrix_manager($snapshot['creator'], fetch_users($pdo), $config);
+            if (!$manager || (int) $manager['id'] !== (int) $expectedOwnerId) throw new BitrixException('Можно обновить только свои сделки.', 403);
+        }
         $pdo->beginTransaction();
         $statement = $pdo->prepare('SELECT record_number FROM manager_bitrix_deals WHERE portal_key = ? AND deal_id = ? FOR UPDATE');
         $statement->execute([$portalKey, $id]); $number = $statement->fetchColumn();
@@ -299,6 +322,7 @@ function bitrix_sync(PDO $pdo, array $config, $id, $call = null, $refresh = null
             $statement->execute([$refresh ? $refresh['number'] : $number]); $row = $statement->fetch();
             // A deleted registry row is not silently recreated on the next update.
             if (!$row) { $pdo->commit(); return ['skipped' => 'record_deleted']; }
+            if ($expectedOwnerId !== null && (int) $row['owner_id'] !== (int) $expectedOwnerId) throw new BitrixException('Можно обновить только свои сделки.', 403);
             $previous = record_from_database_row($row, true);
             $previous['ownerId'] = (int) $row['owner_id'];
             if ($refresh && bitrix_existing_deal_id($previous, $config) !== $id) {
@@ -325,13 +349,11 @@ function bitrix_sync(PDO $pdo, array $config, $id, $call = null, $refresh = null
             $statement = $pdo->prepare('INSERT INTO manager_bitrix_deals (portal_key, deal_id, record_number) VALUES (?, ?, ?)');
             $statement->execute([$portalKey, $id, $record['number']]);
         }
-        $result = ['synced' => true, 'number' => $record['number'], 'dealStatus' => $record['registryMeta']['bitrix']['dealStatus'],
-            'unmappedStage' => $record['registryMeta']['bitrix']['unmappedStage']];
+        $result = ['synced' => true, 'number' => $record['number']];
         if ($refresh) {
             $statement = $pdo->prepare('SELECT qualified_at FROM manager_bonus_qualification WHERE record_number = ? FOR UPDATE');
             $statement->execute([$record['number']]); $oldQualification = $statement->fetchColumn();
             $result['title'] = $record['registryMeta']['title'];
-            $result['stageName'] = $record['registryMeta']['bitrix']['stageName'];
             $result['amount'] = $record['amount'];
             $result['paymentStatus'] = $record['registryMeta']['paymentStatus'];
             $statement = $pdo->prepare('INSERT INTO manager_bitrix_refresh_history (run_id, record_number, refreshed_at, actor_id, previous_json, result_json) VALUES (?, ?, ?, ?, ?, ?)');

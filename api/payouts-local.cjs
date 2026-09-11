@@ -15,7 +15,6 @@ function validDate(value) {
 }
 
 function isEligible(record) {
-  if (record?.registryMeta?.bitrix) return record.registryMeta.bitrix.dealStatus === 'Завершена';
   return Boolean(record && record.registryMeta.paymentStatus === 'Да' && record.registryMeta.closingDocs === 'Отправлены'
     && cents(record.registryMeta.prepayment) >= cents(record.amount));
 }
@@ -64,9 +63,8 @@ function buildReport(records, users, ledger, user, query, deletedIds = []) {
   const entries = visibleRecords.flatMap(record => {
     const common = { managerId: record.ownerId, manager: names.get(record.ownerId) || 'Удалённый пользователь',
       number: record.number, title: record.registryMeta.title || record.counterparty || 'Без названия' };
-    const crm = record.registryMeta.bitrix;
-    const planned = crm ? crm.dealStatus === 'Планируется' : !['Да', 'Предоплата'].includes(record.registryMeta.paymentStatus);
-    const complete = crm ? crm.dealStatus === 'Завершена' : record.registryMeta.paymentStatus === 'Да'
+    const planned = !['Да', 'Предоплата'].includes(record.registryMeta.paymentStatus);
+    const complete = record.registryMeta.paymentStatus === 'Да'
       && cents(record.registryMeta.prepayment) >= cents(record.amount)
       && ['Отправлены', 'Не нужно'].includes(record.registryMeta.closingDocs);
     const sale = { ...common, id: `sale:${record.number}`, kind: 'sale', date: record.date,
@@ -211,4 +209,4 @@ function createPayoutStore(dataDir) {
   return { read, append, readDeletions, remove };
 }
 
-module.exports = { createPayoutStore, buildReport, bonusCents, today, stampQualification, isEligible };
+module.exports = { createPayoutStore, buildReport, bonusCents, today, stampQualification, isEligible, validDate };

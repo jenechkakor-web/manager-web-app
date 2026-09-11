@@ -92,6 +92,25 @@ const crypto = require('node:crypto');
     assert.equal(paidRecord.registryMeta.prepayment,paidRecord.amount);
     assert.equal(paidRecord.registryMeta.prepaymentOverridden,true);
     assert.equal((await (await get('payouts')).json()).totals.accrued,0,'Cancelled automatic bonus must not reappear');
+    const editable={number:'EDIT-OWN',date:'2026-09-01',amount:1000,status:'draft',data:{},registryMeta:{paymentStatus:'Планируется'}};
+    assert.equal((await post('contracts-registry',{record:editable},manager)).status,200);
+    const editOwn=fields=>post('contracts-registry',{action:'update-meta',number:editable.number,fields},manager);
+    assert.equal((await editOwn({date:'2026-08-31',counterparty:'Клиент',title:'Редактирование',source:'Директ',amount:1500})).status,200);
+    const changed=await (await get('contracts-registry?number=EDIT-OWN',manager)).json();
+    assert.equal(changed.date,'2026-08-31');assert.equal(changed.amount,1500);assert.equal(changed.registryMeta.title,'Редактирование');
+    assert.equal((await editOwn({number:'FORGED'})).status,400);
+    assert.equal((await editOwn({manager:'admin'})).status,403);
+    assert.equal((await editOwn({recordStatus:'exported'})).status,403);
+    assert.equal((await editOwn({paymentStatus:'Предоплата',prepayment:500})).status,200);
+    assert.equal((await editOwn({amount:400})).status,409);
+    for(const sellerKey of ['ip','ooo']) {
+      const invoice={number:'INVOICE-'+sellerKey,amount:100,status:'exported',data:{sellerKey}};
+      assert.equal((await post('contracts-registry',{record:invoice},manager)).status,200);
+      assert.equal((await (await get('contracts-registry?number='+invoice.number,manager)).json()).registryMeta.paymentType,sellerKey==='ip'?'ИП':'ООО');
+      assert.equal((await post('contracts-registry',{action:'update-meta',number:invoice.number,fields:{paymentType:'Наличка'}},manager)).status,200);
+      assert.equal((await post('contracts-registry',{record:invoice},manager)).status,200);
+      assert.equal((await (await get('contracts-registry?number='+invoice.number,manager)).json()).registryMeta.paymentType,'Наличка');
+    }
     console.log('PHP HTTP: authentication, ownership, ledger idempotence, dates, preservation passed');
   } catch(error) { console.error(logs); throw error; }
   finally {const exited=once(child,'exit');child.kill();await exited;}
